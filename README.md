@@ -1,226 +1,137 @@
-# PaperMC/Spigot Minecraft Server Plugin Template
-A template for building PaperMC/Spigot Minecraft server plugins!
+# KokoPixel
 
-<!-- TODO: CHANGE ME -->
-[![Test and Release](https://github.com/CrimsonWarpedcraft/plugin-template/actions/workflows/main.yml/badge.svg)](https://github.com/CrimsonWarpedcraft/plugin-template/actions/workflows/main.yml)
-
-<!-- TODO: CHANGE ME -->
-[![](https://dcbadge.limes.pink/api/server/5XMmeV6EtJ)](https://discord.gg/5XMmeV6EtJ)
+A Paper 1.21 minigames framework with BungeeCord support. Handles game lifecycle, queuing, parties, spectating, replays, and cross-server coordination so minigame plugins can focus on gameplay logic.
 
 ## Features
-### Github Actions 🎬
-* Automated builds, testing, and release drafting
-* [Discord notifcations](https://github.com/marketplace/actions/discord-message-notify) for snapshots and releases
 
-### Bots 🤖
-* **Probot: Stale**
-    * Mark issues stale after 30 days
-* **Dependabot**
-    * Update GitHub Actions workflows
-    * Update Gradle dependencies
+**Minigame Framework**
+- Register minigames via the `KokoPixelAPI` — get world management, queuing, teams, and stats for free
+- Dynamic world cloning per game instance, deleted on game end
+- Team support with per-team spawn points
+- Per-player and per-game statistics
 
-### Issue Templates 📋
-* Bug report template
-* Feature request template
+**Queue System**
+- Public and private (party) queues per game type
+- Cross-server queue merging — every 60s servers compare queue sizes and consolidate smaller queues into the largest one via BungeeCord routing
+- Party-aware queuing with size validation including remote party members
 
-### Gradle Builds 🏗
-* Shadowed [PaperLib](https://github.com/PaperMC/PaperLib) build
-* [Checkstyle](https://checkstyle.org/) Google standard style check
-* [SpotBugs](https://spotbugs.github.io/) code analysis
-* [JUnit](https://junit.org/) testing
+**Party System**
+- Full cross-server party support — members can be on different servers
+- BungeeCord proxy tracks party membership and routes remote members when the leader queues or starts a replay
+- Clickable party invites with Adventure text components
 
-### Config Files 📁
-* Sample plugin.yml with autofill name, version, and main class.
-* Empty config.yml (just to make life \*that\* much easier)
-* Gradle build config
-* Simple .gitignore for common Gradle files
+**Spectator System**
+- Spectator mode identical to dying in-game — invisible, flying, invulnerable
+- Cycle through players, adjust flight speed, return to lobby or requeue
+- Admin spectating via `/admingui`
 
-## Usage
-In order to use this template for yourself, there are a few things that you will need to keep in mind.
+**Replay System**
+- Every game is recorded server-side: player positions, held items, pose, block breaks/places
+- Recordings stored to disk, auto-deleted after 6 hours (timer survives server restarts)
+- Playback uses NMS fake player packets — viewers see ghost players with correct skins and animations
+- Cross-server replay index stored on the BungeeCord proxy — new servers receive the full index on connect, no desync
+- Party leaders bring their whole party into a replay, including members on other servers
+- `/replay` — browse and watch games you participated in
 
-### Release Info
-#### PaperMC Version Mapping
-Here's a list of the PaperMC versions and the versions of this latest compatible version.
+**Admin Panel** (`/admingui`)
+- View and spectate active games
+- Browse all replays across the entire network, watch local ones directly or route to the host server
+- Force-stop all active games
 
-| PaperMC | ExamplePlugin |
-|---------|---------------|
-| 1.21.8  | 4.0.16+       |
-| 1.21.7  | 4.0.15        |
-| 1.21.6  | 4.0.14        |
-| 1.21.5  | 4.0.12        |
-| 1.21.4  | 4.0.7         |        
-| 1.21.3  | 4.0.3         |
-| 1.21.1  | 4.0.2         |
-| 1.21    | 3.12.1        |
-| 1.20.6  | 3.11.0        |
-| 1.19.4  | 3.2.1         |
-| 1.18.2  | 3.0.2         |
-| 1.17.1  | 2.2.0         |
-| 1.16.5  | 2.1.2         |
+**Social**
+- `/msg` and `/r` — cross-server private messaging
+- `/friend` — persistent friend list with cross-server online status and server location
+- Friend join/leave notifications
 
-This chart would make more sense if this plugin actually did anything and people would have a reason
-to be looking for older releases to run on older servers.
+**Ranks**
+- Configurable rank system with colored prefixes in chat and tab list
 
-To use this as a template, just use the latest version of this project and update the PaperMC
-version as needed. See more info on release stability below.
+## Requirements
 
-#### Release and Versioning Strategy
-Stable versions of this repo are tagged `vX.Y.Z` and have an associated [release](https://github.com/CrimsonWarpedcraft/plugin-template/releases).
+- Paper 1.21.8
+- BungeeCord (optional — enables cross-server features)
+- Java 21
 
-Testing versions of this repo are tagged `vX.Y.Z-RC-N` and have an associated [pre-release](https://github.com/CrimsonWarpedcraft/plugin-template/releases).
+## Building
 
-Development versions of this repo are pushed to the master branch and are **not** tagged.
-
-| Event             | Plugin Version Format | CI Action                        | GitHub Release Draft? |
-|-------------------|-----------------------|----------------------------------|-----------------------|
-| PR                | yyMMdd-HHmm-SNAPSHOT  | Build and test                   | No                    |
-| Cron              | yyMMdd-HHmm-SNAPSHOT  | Build, test, and notify          | No                    |
-| Push to `main`    | 0.0.0-SNAPSHOT        | Build, test, release, and notify | No                    |
-| Tag `vX.Y.Z-RC-N` | X.Y.Z-SNAPSHOT        | Build, test, release, and notify | Pre-release           |
-| Tag `vX.Y.Z`      | X.Y.Z                 | Build, test, release, and notify | Release               |
-
-### Discord Notifications
-In order to use Discord notifications, you will need to create two GitHub secrets. `DISCORD_WEBHOOK_ID` 
-should be set to the id of your Discord webhook. `DISCORD_WEBHOOK_TOKEN` will be the token for the webhook.
-
-You can find these values by copying the Discord Webhook URL:  
-`https://discord.com/api/webhooks/<DISCORD_WEBHOOK_ID>/<DISCORD_WEBHOOK_TOKEN>`
-
-Optionally, you can also configure `DISCORD_RELEASE_WEBHOOK_ID` and `DISCORD_RELEASE_WEBHOOK_TOKEN`
-to send release announcements to a separate channel.
-
-For more information, see [Discord Message Notify](https://github.com/marketplace/actions/discord-message-notify).
-
----
-
-**I've broken the rest of the changes up by their files to make things a bit easier to find.**
-
----
-
-### settings.gradle
-Update the line below with the name of your plugin.
-
-```groovy
-rootProject.name = 'ExamplePlugin'
-```
-
-### build.gradle
-Make sure to update the `group` to your package's name in the following section.
-
-```groovy
-group = "com.crimsonwarpedcraft.exampleplugin"
-```
-
-Add any required repositories for your dependencies in the following section.
-
-```groovy
-repositories {
-    maven {
-        name 'papermc'
-        url 'https://papermc.io/repo/repository/maven-public/'
-        content {
-            includeModule("io.papermc.paper", "paper-api")
-            includeModule("io.papermc", "paperlib")
-            includeModule("net.md-5", "bungeecord-chat")
-        }
-    }
-
-    mavenCentral()
-}
-```
-
-Also, update your dependencies as needed (of course).
-
-```groovy
-dependencies {
-    compileOnly 'io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT'
-    compileOnly 'com.github.spotbugs:spotbugs-annotations:4.9.3'
-    implementation 'io.papermc:paperlib:1.0.8'
-    spotbugsPlugins 'com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0'
-    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.9.3'
-    testImplementation 'io.papermc.paper:paper-api:1.21.6-R0.1-SNAPSHOT'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.13.1'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.13.1'
-}
-```
-
-### src/main/resources/plugin.yml
-First, update the following with your information.
-
-```yaml
-author: AUTHOR
-description: DESCRIPTION
-```
-
-Next, the `commands` and `permissions` sections below should be updated as needed.
-
-```yaml
-commands:
-  ex:
-    description: Base command for EXAMPLE
-    usage: "For a list of commands, type /ex help"
-    aliases: example
-permissions:
-  example.test:
-    description: DESCRIPTION
-    default: true
-  example.*:
-    description: Grants all other permissions
-    default: false
-    children:
-      example.test: true
-```
-
-### .github/dependabot.yml
-You will need to replace all instances of `leviem1`, such as the one below, with your GitHub
-username.
-
-```yaml
-reviewers:
-  - "leviem1"
-```
-
-### .github/CODEOWNERS
-You will need to replace `leviem1`, with your GitHub username.
-
-```text
-*   @leviem1
-```
-
-### .github/FUNDING.yml
-Update or delete this file, whatever applies to you.
-
-```yaml
-github: leviem1
-```
-
-For more information see: [Displaying a sponsor button in your repository](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository)
-
-### CODE_OF_CONDUCT.md
-If you chose to adopt a Code of Conduct for your project, please update line 63 with your preferred
-contact method.
-
-## Creating a Release
-Below are the steps you should follow to create a release.
-
-1. Create a tag on `main` using semantic versioning (e.g. v0.1.0)
-2. Push the tag and get some coffee while the workflows run
-3. Publish the release draft once it's been automatically created
-
-## Building locally
-Thanks to [Gradle](https://gradle.org/), building locally is easy no matter what platform you're on. Simply run the following command:
-
-```text
+```bash
 ./gradlew build
 ```
 
-This build step will also run all checks and tests, making sure your code is clean.
+JAR output: `build/libs/KokoPixel.jar`
 
-JARs can be found in `build/libs/`.
+## Setup
 
-## Contributing
-See [CONTRIBUTING.md](https://github.com/CrimsonWarpedcraft/plugin-template/blob/main/CONTRIBUTING.md).
+1. Drop `KokoPixel.jar` into your Paper server's `plugins/` folder
+2. Start the server once to generate config, then stop it
+3. Edit `plugins/KokoPixel/config.yml`:
+   ```yaml
+   server-id: "lobby-1"   # unique per server
+   bungee:
+     enabled: true         # if behind BungeeCord
+   ```
+4. Start the server, join, and run `/kokopixel setlobby` to set the spawn
+5. Register your minigame plugin, then:
+   ```
+   /kokopixel setworld <game>       # stand in the template world
+   /kokopixel addspawn <game>       # stand at each spawn point
+   ```
+6. Duplicate the server folder for each additional node, changing `server-id` each time
 
----
+## Commands
 
-I think that's all... phew! Oh, and update this README! ;)
+| Command | Permission | Description |
+|---|---|---|
+| `/minigame [join\|leave\|list]` | `kokopixel.minigame` | Queue for games |
+| `/party <create\|invite\|accept\|...>` | `kokopixel.party` | Party management |
+| `/lobby` | `kokopixel.lobby` | Return to lobby |
+| `/replay` | `kokopixel.replay` | Watch past game recordings |
+| `/msg <player> <message>` | `kokopixel.msg` | Cross-server private message |
+| `/r <message>` | `kokopixel.msg` | Reply to last message |
+| `/friend <add\|list\|accept\|...>` | `kokopixel.friend` | Friends list |
+| `/kokopixel` | `kokopixel.admin` | Admin setup commands |
+| `/admingui` | `kokopixel.admin` | Admin panel GUI |
+
+## API
+
+Other plugins can register minigames and interact with the framework:
+
+```java
+// Register a minigame
+KokoPixelAPI api = KokoPixelAPI.get();
+
+// Check if a player is in a game
+api.isInGame(player);
+
+// Get the game a player is in
+api.getGame(player).ifPresent(game -> { ... });
+
+// Queue a player
+api.joinQueue(player, "yourgamename");
+
+// Spectator control
+api.enableSpectator(player);
+api.disableSpectator(player);
+```
+
+Minigame plugins extend `Minigame` and `GameInstanceImpl` to define their game logic via `onGameStart`, `onGameEnd`, `onPlayerJoin`, and `onPlayerLeave` hooks.
+
+## Project Structure
+
+```
+src/main/java/cc/kokodev/kokopixel/
+├── api/            KokoPixelAPI interface and provider
+├── bungee/         BungeeCord proxy plugin + Paper-side listener
+├── commands/       All player and admin commands
+├── friends/        Friend list persistence and cross-server status
+├── listeners/      Bukkit event listeners
+├── menu/           Chest GUI menus (game selector, admin panel)
+├── minigames/      Game instance, player, team implementations
+├── party/          Party system including cross-server state
+├── queue/          Queue management and cross-server merging
+├── ranks/          Rank system
+├── replay/         Recording, playback, session management
+├── spectator/      Spectator mode
+├── util/           Shared message formatting (Msg.java)
+└── world/          World cloning and cleanup
+```
