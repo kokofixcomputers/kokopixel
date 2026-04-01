@@ -1,0 +1,59 @@
+name: KokoPixel
+version: '2.0.0'
+main: cc.kokodev.kokopixel.KokoPixel
+api-version: '1.21'
+author: KokoDev
+description: Advanced minigames framework with BungeeCord support
+
+commands:
+  minigame:
+    description: Main minigame command
+    aliases: [mg]
+    permission: kokopixel.minigame
+  party:
+    description: Party management commands
+    aliases: [p]
+    permission: kokopixel.party
+  kokopixel:
+    description: Admin commands
+    aliases: [kp]
+    permission: kokopixel.admin
+  lobby:
+    description: Return to lobby
+    aliases: [hub, spawn]
+    permission: kokopixel.lobby
+  admingui:
+    description: Open the admin GUI panel
+    permission: kokopixel.admin
+  replay:
+    description: Watch replays of your past games
+    permission: kokopixel.replay
+  friend:
+    description: Manage your friends list
+    aliases: [f]
+    permission: kokopixel.friend
+  msg:
+    description: Send a private message
+    aliases: [tell, whisper, w]
+    permission: kokopixel.msg
+  r:
+    description: Reply to last private message
+    permission: kokopixel.msg
+
+permissions:
+  kokopixel.*:
+    default: op
+    children:
+      kokopixel.minigame: true
+      kokopixel.party: true
+      kokopixel.queue: true
+      kokopixel.admin: true
+      kokopixel.lobby: true
+  kokopixel.minigame: { default: true }
+  kokopixel.party: { default: true }
+  kokopixel.queue: { default: true }
+  kokopixel.lobby: { default: true }
+  kokopixel.admin: { default: op }
+  kokopixel.replay: { default: true }
+  kokopixel.friend: { default: true }
+  kokopixel.msg: { default: true }

@@ -1,0 +1,35 @@
+# KokoPixel V2 Configuration
+
+# Server Configuration
+server-id: ""  # Auto-generated if empty
+
+# BungeeCord Mode
+bungee:
+  enabled: false
+  host: "localhost"
+  port: 25565
+
+# Lobby Settings
+lobby:
+  world: "world"
+
+# Game Selector Blocks (auto-generated)
+selector-blocks: {}
+
+# Minigame Settings
+minigames:
+  default-min-players: 2
+  default-max-players: 16
+  worlds:
+    delete-on-end: true
+    default-environment: NORMAL
+
+# Game Selector Item
+game-selector:
+  enabled: true
+  material: COMPASS
+  name: "§a§lGame Selector &7(Right Click)"
+  slot: 0
+  lore:
+    - "§7Right-click to open"
+    - "§7the game selector menu"
