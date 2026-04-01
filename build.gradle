@@ -5,7 +5,7 @@ plugins {
     id 'checkstyle'
     id "com.github.spotbugs" version "6.4.2"
     id 'com.gradleup.shadow' version '9.1.0'
-    id 'io.papermc.paperweight.userdev' version '2.0.0-beta.19'
+    id 'io.papermc.paperweight.userdev' version '2.0.0-SNAPSHOT'
     id 'java'
 }
 
