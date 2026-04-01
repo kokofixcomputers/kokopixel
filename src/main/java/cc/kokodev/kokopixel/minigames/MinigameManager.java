@@ -41,16 +41,19 @@ public class MinigameManager {
     public void addTeamSpawnPoint(String name, String team, Location l) { Minigame m = getMinigame(name); if (m != null) m.addTeamSpawnPoint(team, l); }
 
     public void startGame(Minigame mg, List<Player> players, boolean isPrivate) {
-        World w = plugin.getWorldManager().createGameWorld(mg);
-        if (w == null) { players.forEach(p -> p.sendMessage("§cFailed to create game world!")); return; }
-        GameInstanceImpl game = mg.createInstance(w);
-        if (game == null) { players.forEach(p -> p.sendMessage("§cFailed to start game!")); return; }
-        game.setPrivate(isPrivate);
-        activeGames.put(game.getGameId(), game);
-        worldGames.put(w.getName(), game.getGameId());
-        mg.addGame(game);
-        for (Player p : players) { game.addPlayer(p); playerGames.put(p.getUniqueId(), game); plugin.getQueueManager().removeFromQueue(p); }
-        game.start();
+        // Copy the world async to avoid locking conflicts with Minecraft's session.lock,
+        // then start the game on the main thread once the world is ready.
+        plugin.getWorldManager().createGameWorldAsync(mg, w -> {
+            if (w == null) { players.forEach(p -> p.sendMessage("§cFailed to create game world!")); return; }
+            GameInstanceImpl game = mg.createInstance(w);
+            if (game == null) { players.forEach(p -> p.sendMessage("§cFailed to start game!")); plugin.getWorldManager().deleteWorld(w); return; }
+            game.setPrivate(isPrivate);
+            activeGames.put(game.getGameId(), game);
+            worldGames.put(w.getName(), game.getGameId());
+            mg.addGame(game);
+            for (Player p : players) { game.addPlayer(p); playerGames.put(p.getUniqueId(), game); plugin.getQueueManager().removeFromQueue(p); }
+            game.start();
+        });
     }
 
     public Optional<GameInstanceImpl> getGame(Player p) { return Optional.ofNullable(playerGames.get(p.getUniqueId())); }

@@ -48,12 +48,21 @@ public class ReplaySession {
     public void addViewer(Player viewer) {
         viewers.add(viewer.getUniqueId());
         plugin.getSpectatorManager().enableSpectator(viewer, true);
-        viewer.teleport(replayWorld.getSpawnLocation());
         viewer.setMetadata("kp_replay_session",
                 new org.bukkit.metadata.FixedMetadataValue(plugin, recording.gameId.toString()));
+
+        // Teleport to the first recorded player position so the viewer is near the action.
+        // Fall back to world spawn if no frames exist yet.
+        org.bukkit.Location startLoc = replayWorld.getSpawnLocation();
+        if (!recording.frames.isEmpty() && !recording.frames.get(0).players.isEmpty()) {
+            ReplayFrame.PlayerSnapshot first = recording.frames.get(0).players.values().iterator().next();
+            startLoc = new org.bukkit.Location(replayWorld, first.x, first.y + 3, first.z);
+        }
+        viewer.teleport(startLoc);
+
         viewer.sendMessage("§7[§dReplay§7] §eWatching §f" + recording.gameType
                 + " §7(" + recording.durationSeconds() + "s) — §bUse bed to exit.");
-        for (ServerPlayer fake : fakePlayers.values()) sendSpawnPackets(viewer, fake);
+        for (ServerPlayer fake : fakePlayers.values()) sendSpawnPackets(viewer, fake, fake.getGameProfile().getName());
     }
 
     public void removeViewer(Player viewer) {
@@ -76,11 +85,25 @@ public class ReplaySession {
     // -------------------------------------------------------------------------
 
     public void start() {
-        if (!recording.frames.isEmpty()) {
-            for (Map.Entry<UUID, ReplayFrame.PlayerSnapshot> entry
-                    : recording.frames.get(0).players.entrySet()) {
-                spawnFakePlayer(entry.getKey(), entry.getValue());
+        plugin.getLogger().info("[Replay] Starting session for " + recording.gameType
+                + " — " + recording.frames.size() + " frames, "
+                + recording.participants.size() + " participants.");
+
+        if (recording.frames.isEmpty()) {
+            plugin.getLogger().warning("[Replay] Recording has no frames — nothing to play back.");
+            for (UUID vid : viewers) {
+                Player v = plugin.getServer().getPlayer(vid);
+                if (v != null) v.sendMessage("§c[Replay] This recording is empty.");
             }
+            stop();
+            return;
+        }
+
+        ReplayFrame first = recording.frames.get(0);
+        plugin.getLogger().info("[Replay] First frame has " + first.players.size() + " player(s).");
+
+        for (Map.Entry<UUID, ReplayFrame.PlayerSnapshot> entry : first.players.entrySet()) {
+            spawnFakePlayer(entry.getKey(), entry.getValue());
         }
         tickTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
     }
@@ -177,9 +200,19 @@ public class ReplaySession {
     // -------------------------------------------------------------------------
 
     private void spawnFakePlayer(UUID id, ReplayFrame.PlayerSnapshot snap) {
+        plugin.getLogger().info("[Replay] Spawning fake player: " + snap.name
+                + " at " + snap.x + "," + snap.y + "," + snap.z
+                + " viewers=" + viewers.size());
         try {
             ServerLevel level = ((CraftWorld) replayWorld).getHandle();
-            GameProfile profile = new GameProfile(id, snap.name);
+            UUID fakeUUID = new UUID(id.getMostSignificantBits() ^ 0xDEADBEEFL, id.getLeastSignificantBits());
+
+            // Build a GameProfile with skin textures already in it.
+            // GameProfile's property map is immutable after construction, so we must
+            // either copy from a real player's already-populated profile, or build
+            // a mutable PropertyMap and pass it to the constructor.
+            GameProfile profile = buildProfileWithSkin(fakeUUID, snap.name, id);
+
             ServerPlayer fake = new ServerPlayer(
                     ((CraftServer) plugin.getServer()).getServer(),
                     level, profile,
@@ -189,36 +222,152 @@ public class ReplaySession {
             fake.setXRot(snap.pitch);
             fakePlayers.put(id, fake);
             lastSnapshot.put(id, snap);
+            plugin.getLogger().info("[Replay] Fake player created, sending packets to "
+                    + viewers.size() + " viewer(s).");
             for (UUID vid : viewers) {
                 Player v = plugin.getServer().getPlayer(vid);
-                if (v != null) sendSpawnPackets(v, fake);
+                if (v != null) sendSpawnPackets(v, fake, snap.name);
+                else plugin.getLogger().warning("[Replay] Viewer " + vid + " not online.");
             }
         } catch (Exception e) {
-            plugin.getLogger().warning("[Replay] Failed to spawn fake player " + snap.name + ": " + e.getMessage());
+            plugin.getLogger().warning("[Replay] Failed to spawn fake player " + snap.name
+                    + ": " + e.getMessage());
+            e.printStackTrace();
         }
+    }
+
+    /**
+     * Builds a GameProfile for the fake player, with skin textures populated.
+     * Strategy: if the real player is online, copy their already-authenticated NMS profile
+     * (which has a mutable PropertyMap populated during login). Otherwise create a bare profile.
+     */
+    private GameProfile buildProfileWithSkin(UUID fakeUUID, String name, UUID originalId) {
+        // Best case: real player is online — their NMS profile has textures already loaded
+        Player realPlayer = plugin.getServer().getPlayer(originalId);
+        if (realPlayer != null) {
+            GameProfile realProfile = ((CraftPlayer) realPlayer).getHandle().getGameProfile();
+            // Create a new profile with the fake UUID but copy the real profile's properties
+            // by cloning via the (UUID, String, PropertyMap) constructor if available,
+            // otherwise fall back to a bare profile.
+            try {
+                Class<?> propMapClass = Class.forName("com.mojang.authlib.properties.PropertyMap");
+                // Try GameProfile(UUID, String, PropertyMap)
+                GameProfile newProfile = GameProfile.class
+                        .getConstructor(java.util.UUID.class, String.class, propMapClass)
+                        .newInstance(fakeUUID, name, getPropertiesMap(realProfile));
+                return newProfile;
+            } catch (NoSuchMethodException ignored) {
+                // Constructor doesn't exist — create bare profile and try mutable copy
+            } catch (Exception e) {
+                plugin.getLogger().warning("[Replay] Profile copy failed: " + e.getMessage());
+            }
+            // Fallback: create bare profile — skin won't show but at least player spawns
+            return new GameProfile(fakeUUID, name);
+        }
+
+        // Stored skin path — create bare profile (immutable map, can't inject textures)
+        // TODO: when offline, skin defaults to Steve. Future improvement: store full profile.
+        return new GameProfile(fakeUUID, name);
     }
 
     private void despawnFakePlayer(UUID id) {
         ServerPlayer fake = fakePlayers.remove(id);
-        lastSnapshot.remove(id);
+        ReplayFrame.PlayerSnapshot snap = lastSnapshot.remove(id);
         if (fake == null) return;
+
+        // Remove entity from client view
         broadcastPacket(new ClientboundRemoveEntitiesPacket(fake.getId()));
+
+        // Remove from tab list so the client doesn't show a ghost entry
+        broadcastPacket(new ClientboundPlayerInfoRemovePacket(List.of(fake.getUUID())));
+
+        // Remove the nametag team
+        if (snap != null) {
+            String teamName = ("rp_" + snap.name).substring(0,
+                    Math.min(16, ("rp_" + snap.name).length()));
+            var scoreboard = new net.minecraft.world.scores.Scoreboard();
+            var team = new net.minecraft.world.scores.PlayerTeam(scoreboard, teamName);
+            broadcastPacket(ClientboundSetPlayerTeamPacket.createRemovePacket(team));
+        }
     }
 
-    private void sendSpawnPackets(Player viewer, ServerPlayer fake) {
+    private void sendSpawnPackets(Player viewer, ServerPlayer fake, String playerName) {
         var conn = ((CraftPlayer) viewer).getHandle().connection;
-        conn.send(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(fake)));
-        // Build the spawn packet from stable fields — avoids the constructor signature
-        // change between 1.21.1 and 1.21.2 while remaining compatible across all 1.21.x.
-        conn.send(new ClientboundAddEntityPacket(
-                fake.getId(),
-                fake.getUUID(),
-                fake.getX(), fake.getY(), fake.getZ(),
-                fake.getXRot(), fake.getYRot(),
-                net.minecraft.world.entity.EntityType.PLAYER,
-                0,
-                fake.getDeltaMovement(),
-                fake.getYHeadRot()));
+
+        net.minecraft.server.network.ServerGamePacketListenerImpl stubConn = null;
+        try {
+            java.lang.reflect.Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            sun.misc.Unsafe unsafe = (sun.misc.Unsafe) f.get(null);
+            stubConn = (net.minecraft.server.network.ServerGamePacketListenerImpl)
+                    unsafe.allocateInstance(net.minecraft.server.network.ServerGamePacketListenerImpl.class);
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Replay] Stub connection failed: " + e.getMessage());
+        }
+
+        fake.connection = stubConn;
+        try {
+            conn.send(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(fake)));
+            plugin.getLogger().info("[Replay] Sent player info packet for " + playerName);
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Replay] Player info packet failed for "
+                    + playerName + ": " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            fake.connection = null;
+        }
+
+        try {
+            conn.send(new ClientboundAddEntityPacket(
+                    fake.getId(),
+                    fake.getUUID(),
+                    fake.getX(), fake.getY(), fake.getZ(),
+                    fake.getXRot(), fake.getYRot(),
+                    net.minecraft.world.entity.EntityType.PLAYER,
+                    0,
+                    fake.getDeltaMovement(),
+                    fake.getYHeadRot()));
+            plugin.getLogger().info("[Replay] Sent spawn packet for " + playerName);
+
+            // Force nametag visibility — player entity nametags are hidden by default.
+            // Create a scoreboard team with nameTagVisibility=always and add the fake player.
+            conn.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(
+                    makeReplayTeam(playerName), true));
+            conn.send(ClientboundSetPlayerTeamPacket.createPlayerPacket(
+                    makeReplayTeam(playerName),
+                    playerName,
+                    ClientboundSetPlayerTeamPacket.Action.ADD));
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Replay] Spawn packet failed for "
+                    + playerName + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Creates a PlayerTeam with nameTagVisibility=always for the fake player.
+     * Each fake player gets their own team so names don't interfere with each other.
+     * The team name is truncated to 16 chars (Minecraft limit).
+     */
+    private net.minecraft.world.scores.PlayerTeam makeReplayTeam(String playerName) {
+        var scoreboard = new net.minecraft.world.scores.Scoreboard();
+        String teamName = ("rp_" + playerName).substring(0,
+                Math.min(16, ("rp_" + playerName).length()));
+        var team = new net.minecraft.world.scores.PlayerTeam(scoreboard, teamName);
+        team.setNameTagVisibility(net.minecraft.world.scores.Team.Visibility.ALWAYS);
+        team.setCollisionRule(net.minecraft.world.scores.Team.CollisionRule.NEVER);
+        return team;
+    }
+
+    /** Finds and invokes the properties accessor on a GameProfile (handles renamed methods). */
+    private Object getPropertiesMap(GameProfile profile) {
+        for (java.lang.reflect.Method m : profile.getClass().getMethods()) {
+            if ((m.getName().equals("getProperties") || m.getName().equals("properties"))
+                    && m.getParameterCount() == 0) {
+                try { return m.invoke(profile); } catch (Exception ignored) {}
+            }
+        }
+        return null;
     }
 
     private void broadcastPacket(net.minecraft.network.protocol.Packet<?> packet) {

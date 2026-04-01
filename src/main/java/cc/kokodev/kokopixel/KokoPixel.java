@@ -42,6 +42,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     private ReplayManager replayManager;
     private FriendManager friendManager;
     private cc.kokodev.kokopixel.commands.MsgCommand msgCommand;
+    private cc.kokodev.kokopixel.listeners.TabListener tabListener;
     private Location lobbySpawn;
     private String serverId;
 
@@ -95,7 +96,8 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
         getServer().getPluginManager().registerEvents(new GameListener(this), this);
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new AdvancementListener(this), this);
-        getServer().getPluginManager().registerEvents(new TabListener(this), this);
+        this.tabListener = new cc.kokodev.kokopixel.listeners.TabListener(this);
+        getServer().getPluginManager().registerEvents(tabListener, this);
         getServer().getPluginManager().registerEvents(new StatisticsListener(this), this);
         getServer().getPluginManager().registerEvents(new SpectatorListener(this), this);
         
@@ -205,6 +207,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     public ReplayManager getReplayManager() { return replayManager; }
     public FriendManager getFriendManager() { return friendManager; }
     public cc.kokodev.kokopixel.commands.MsgCommand getMsgCommand() { return msgCommand; }
+    public cc.kokodev.kokopixel.listeners.TabListener getTabListener() { return tabListener; }
     public Location getLobbySpawn() { return lobbySpawn.clone(); }
     public void setLobbySpawn(Location location) { this.lobbySpawn = location.clone(); }
     public String getServerId() { return serverId; }

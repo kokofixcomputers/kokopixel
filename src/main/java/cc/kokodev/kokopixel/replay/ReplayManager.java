@@ -116,13 +116,21 @@ public class ReplayManager {
         Minigame mg = plugin.getMinigameManager().getMinigame(recording.minigameName);
         if (mg == null) { viewer.sendMessage("§c[Replay] Minigame '" + recording.minigameName + "' is not loaded."); return; }
 
-        World world = plugin.getWorldManager().createGameWorld(mg);
-        if (world == null) { viewer.sendMessage("§c[Replay] Could not create replay world."); return; }
-
-        ReplaySession session = new ReplaySession(plugin, recording, world);
-        activeSessions.put(gameId, session);
-        addViewersFromParty(viewer, session);
-        session.start();
+        viewer.sendMessage("§7[§dReplay§7] §eLoading replay world...");
+        plugin.getWorldManager().createGameWorldAsync(mg, world -> {
+            if (world == null) { viewer.sendMessage("§c[Replay] Could not create replay world."); return; }
+            // Check again — another session may have started while we were loading
+            ReplaySession concurrent = activeSessions.get(gameId);
+            if (concurrent != null && !concurrent.isFinished()) {
+                plugin.getWorldManager().deleteWorld(world); // discard the extra copy
+                addViewersFromParty(viewer, concurrent);
+                return;
+            }
+            ReplaySession session = new ReplaySession(plugin, recording, world);
+            activeSessions.put(gameId, session);
+            addViewersFromParty(viewer, session);
+            session.start();
+        });
     }
 
     private void addViewersFromParty(org.bukkit.entity.Player viewer, ReplaySession session) {
