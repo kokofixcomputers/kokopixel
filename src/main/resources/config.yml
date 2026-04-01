@@ -3,11 +3,14 @@
 # Server Configuration
 server-id: ""  # Auto-generated if empty
 
-# BungeeCord Mode
+# BungeeCord / Velocity Mode
 bungee:
   enabled: false
-  host: "localhost"
-  port: 25565
+
+# Proxy type: "bungeecord" or "velocity"
+# When using Velocity, ensure bungee-plugin-message-channel is enabled in velocity.toml
+proxy:
+  type: "bungeecord"
 
 # Lobby Settings
 lobby:

@@ -208,12 +208,16 @@ public class ReplaySession {
     private void sendSpawnPackets(Player viewer, ServerPlayer fake) {
         var conn = ((CraftPlayer) viewer).getHandle().connection;
         conn.send(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(fake)));
+        // Build the spawn packet from stable fields — avoids the constructor signature
+        // change between 1.21.1 and 1.21.2 while remaining compatible across all 1.21.x.
         conn.send(new ClientboundAddEntityPacket(
-                fake.getId(), fake.getUUID(),
+                fake.getId(),
+                fake.getUUID(),
                 fake.getX(), fake.getY(), fake.getZ(),
                 fake.getXRot(), fake.getYRot(),
                 net.minecraft.world.entity.EntityType.PLAYER,
-                0, net.minecraft.world.phys.Vec3.ZERO,
+                0,
+                fake.getDeltaMovement(),
                 fake.getYHeadRot()));
     }
 

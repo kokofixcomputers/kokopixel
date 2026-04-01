@@ -367,6 +367,10 @@ public class BungeeListener implements PluginMessageListener {
     }
 
     public void connectToServer(Player p, String serverId) {
+        // Works for both BungeeCord and Velocity (Velocity supports the BungeeCord
+        // plugin messaging channel natively when bungee-plugin-message-channel is enabled,
+        // which is the default). For Velocity without BC compat, the proxy plugin handles
+        // REPLAY_START / PENDING_* messages and calls connectPlayer() directly.
         try {
             ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
             DataOutputStream out = new DataOutputStream(byteOut);

@@ -48,7 +48,7 @@ A Paper 1.21 minigames framework with BungeeCord support. Handles game lifecycle
 
 ## Requirements
 
-- Paper 1.21.8
+- Paper 1.21+ (older versions may work, however replay feature may break.)
 - BungeeCord (optional — enables cross-server features)
 - Java 21
 

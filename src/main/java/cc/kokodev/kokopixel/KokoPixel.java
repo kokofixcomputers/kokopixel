@@ -29,6 +29,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
 
     private static KokoPixel instance;
     private boolean isBungeeMode = false;
+    private boolean isVelocityMode = false;
     private BungeeListener bungeeListener;
     private MinigameManager minigameManager;
     private PartyManager partyManager;
@@ -103,11 +104,15 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
         }
         
         if (getConfig().getBoolean("bungee.enabled", false)) {
+            String proxyType = getConfig().getString("proxy.type", "bungeecord").toLowerCase();
+            isVelocityMode = proxyType.equals("velocity");
+
             getServer().getMessenger().registerOutgoingPluginChannel(this, "kokopixel:main");
+            // BungeeCord channel — also used by Velocity's BC compat mode for Connect
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
             this.bungeeListener = new BungeeListener(this);
             getServer().getMessenger().registerIncomingPluginChannel(this, "kokopixel:main", bungeeListener);
-            getLogger().info("BungeeCord mode enabled - Server ID: " + serverId);
+            getLogger().info((isVelocityMode ? "Velocity" : "BungeeCord") + " mode enabled - Server ID: " + serverId);
             startHeartbeat();
         }
         
@@ -187,6 +192,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     public static KokoPixel getInstance() { return instance; }
     public boolean isBungeeMode() { return isBungeeMode; }
     public boolean isBungeeEnabled() { return isBungeeMode; }
+    public boolean isVelocityMode() { return isVelocityMode; }
     public BungeeListener getBungeeListener() { return bungeeListener; }
     public MinigameManager getMinigameManager() { return minigameManager; }
     public PartyManager getPartyManager() { return partyManager; }

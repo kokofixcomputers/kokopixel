@@ -51,6 +51,7 @@ repositories {
             includeModule("io.papermc", "paperlib")
             includeModule("net.md-5", "bungeecord-chat")
             includeModule("net.md-5", "bungeecord-api")
+            includeModule("com.velocitypowered", "velocity-api")
             includeGroup("io.papermc.adventure")
         }
     }
@@ -69,13 +70,15 @@ repositories {
 }
 
 dependencies {
-    paperweight.paperDevBundle('1.21.8-R0.1-SNAPSHOT')
+    paperweight.paperDevBundle('1.21.1-R0.1-SNAPSHOT')
     compileOnly 'com.github.spotbugs:spotbugs-annotations:4.9.5'
     compileOnly 'net.md-5:bungeecord-api:1.21-R0.4'
+    compileOnly 'com.velocitypowered:velocity-api:3.4.0'
+    annotationProcessor 'com.velocitypowered:velocity-api:3.4.0'
     implementation 'io.papermc:paperlib:1.0.8'
     spotbugsPlugins 'com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0'
     testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.9.5'
-    testImplementation 'io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT'
+    testImplementation 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.13.4'
 }
