@@ -95,13 +95,34 @@ public class GameRecorder {
             String heldName = (held == null || held.getType() == Material.AIR)
                     ? "AIR" : held.getType().name();
 
+            // Capture potion effects
+            List<ReplayFrame.PotionEffectData> effects = new ArrayList<>();
+            for (org.bukkit.potion.PotionEffect effect : p.getActivePotionEffects()) {
+                effects.add(ReplayFrame.PotionEffectData.fromBukkit(effect));
+            }
+
             frame.players.put(p.getUniqueId(), new ReplayFrame.PlayerSnapshot(
                     p.getName(),
                     p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ(),
                     p.getLocation().getYaw(), p.getLocation().getPitch(),
                     heldName,
-                    p.isSneaking(), p.isSprinting(), p.isOnGround()
+                    p.isSneaking(), p.isSprinting(), p.isOnGround(),
+                    p.getVelocity().getX(), p.getVelocity().getY(), p.getVelocity().getZ(),
+                    (float) p.getHealth(), p.getFoodLevel(),
+                    p.getGameMode().name(),
+                    p.getAllowFlight(),
+                    p.isFlying(),
+                    p.isInvulnerable(),
+                    p.isCollidable(),
+                    p.getCanPickupItems(),
+                    effects
             ));
+            
+            // Debug logging for first few frames to help identify coordinate issues
+            if (frames.size() <= 5) {
+                plugin.getLogger().info("[Replay Debug] Frame " + frames.size() + " - Player " + p.getName() + 
+                    " at (" + p.getLocation().getX() + ", " + p.getLocation().getY() + ", " + p.getLocation().getZ() + ")");
+            }
         }
 
         // Flush block changes accumulated since last tick
@@ -117,6 +138,22 @@ public class GameRecorder {
     public void recordBlockChange(int x, int y, int z, String material) {
         synchronized (pendingBlockChanges) {
             pendingBlockChanges.add(new ReplayFrame.BlockChange(x, y, z, material));
+        }
+    }
+
+    /** Called when a player dies with custom game logic (like BedWars respawn countdown). */
+    public void recordCustomDeath(org.bukkit.entity.Player player, String deathMessage, String deathCause, 
+                                  boolean hasBed, String teamName, boolean eliminated) {
+        synchronized (pendingBlockChanges) {
+            // Add to the next frame that will be recorded
+            ReplayFrame.DeathEvent deathEvent = new ReplayFrame.DeathEvent(
+                player.getUniqueId(), player.getName(), deathMessage, deathCause, hasBed, teamName, eliminated);
+            
+            // If we have frames already, add to the most recent one (current tick)
+            // Otherwise, it will be added to the next frame
+            if (!frames.isEmpty()) {
+                frames.get(frames.size() - 1).deathEvents.add(deathEvent);
+            }
         }
     }
 

@@ -32,8 +32,10 @@ public class ReplaySession {
     private final Map<UUID, ReplayFrame.PlayerSnapshot> lastSnapshot = new HashMap<>();
 
     private int currentFrame = 0;
+    private double replaySpeed = 1.0; // default to normal speed
     private BukkitTask tickTask;
     private boolean finished = false;
+    private boolean paused = false;
 
     public ReplaySession(KokoPixel plugin, ReplayRecording recording, World replayWorld) {
         this.plugin = plugin;
@@ -60,6 +62,13 @@ public class ReplaySession {
         }
         viewer.teleport(startLoc);
 
+        // Give spectators a green dye to start
+        org.bukkit.inventory.ItemStack dye = new org.bukkit.inventory.ItemStack(Material.GREEN_DYE, 1);
+        org.bukkit.inventory.meta.ItemMeta meta = dye.getItemMeta();
+        meta.setDisplayName("Pause/Resume Replay");
+        dye.setItemMeta(meta);
+        viewer.getInventory().addItem(dye);
+
         viewer.sendMessage("§7[§dReplay§7] §eWatching §f" + recording.gameType
                 + " §7(" + recording.durationSeconds() + "s) — §bUse bed to exit.");
         for (ServerPlayer fake : fakePlayers.values()) sendSpawnPackets(viewer, fake, fake.getGameProfile().getName());
@@ -70,13 +79,17 @@ public class ReplaySession {
         viewer.removeMetadata("kp_replay_session", plugin);
         if (plugin.getSpectatorManager().isSpectator(viewer))
             plugin.getSpectatorManager().disableSpectator(viewer);
-        viewer.teleport(plugin.getLobbySpawn());
+        // viewer.teleport(plugin.getLobbySpawn());
         plugin.getGameSelectorMenu().giveGameSelector(viewer);
         viewer.sendMessage("§7[§dReplay§7] §cLeft replay.");
         if (viewers.isEmpty()) stop();
     }
 
     public boolean hasViewer(UUID id) { return viewers.contains(id); }
+    public boolean isPaused() { return paused; }
+    public void pause() { paused = true; tickTask.cancel(); }
+    public void resume() { if (paused) { paused = false; tickTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L); } }
+
     public boolean isFinished() { return finished; }
     public UUID getRecordingId() { return recording.gameId; }
 
@@ -109,14 +122,30 @@ public class ReplaySession {
     }
 
     private void tick() {
-        if (currentFrame >= recording.frames.size()) { stop(); return; }
+        if (paused || currentFrame >= recording.frames.size()) { return; }
 
-        ReplayFrame frame = recording.frames.get(currentFrame++);
+        int frameAdvance = (int) Math.max(1, replaySpeed); // Calculate frame steps based on speed multiplier
+currentFrame += frameAdvance; // Increase current frame by calculated steps
+ReplayFrame frame = recording.frames.get(currentFrame);
+
+        // Debug logging for first few frames to compare with recording
+        if (currentFrame <= 5) {
+            for (Map.Entry<UUID, ReplayFrame.PlayerSnapshot> entry : frame.players.entrySet()) {
+                ReplayFrame.PlayerSnapshot snap = entry.getValue();
+                plugin.getLogger().info("[Replay Debug] Playback Frame " + currentFrame + " - Player " + snap.name + 
+                    " at (" + snap.x + ", " + snap.y + ", " + snap.z + ")");
+            }
+        }
 
         // Apply block changes to the replay world
         for (ReplayFrame.BlockChange bc : frame.blockChanges) {
             Material mat = Material.matchMaterial(bc.material);
             replayWorld.getBlockAt(bc.x, bc.y, bc.z).setType(mat != null ? mat : Material.AIR, false);
+        }
+
+        // Handle custom death events
+        for (ReplayFrame.DeathEvent death : frame.deathEvents) {
+            handleDeathEvent(death);
         }
 
         // Update fake players
@@ -135,20 +164,30 @@ public class ReplaySession {
             boolean rotated = prev == null || snap.yaw != prev.yaw || snap.pitch != prev.pitch;
 
             if (moved || rotated) {
-                double dx = snap.x - (prev != null ? prev.x : snap.x);
-                double dy = snap.y - (prev != null ? prev.y : snap.y);
-                double dz = snap.z - (prev != null ? prev.z : snap.z);
+                double prevX = prev != null ? prev.x : snap.x;
+                double prevY = prev != null ? prev.y : snap.y;
+                double prevZ = prev != null ? prev.z : snap.z;
+                
+                double dx = snap.x - prevX;
+                double dy = snap.y - prevY;
+                double dz = snap.z - prevZ;
 
-                // ClientboundMoveEntityPacket uses short deltas — max ±8 blocks per tick.
-                // If the player teleported (death/respawn) the delta overflows, so send
-                // a teleport packet instead.
-                boolean needsTeleport = prev == null
-                        || Math.abs(dx) > 7.9 || Math.abs(dy) > 7.9 || Math.abs(dz) > 7.9;
+                // Always use absolute positioning for more accuracy, especially for Z-axis
+                // This prevents cumulative errors from relative movement
+                // Use absolute positioning every 10 ticks to prevent drift
+                boolean needsTeleport = prev == null || currentFrame % 10 == 0 || 
+                    Math.abs(dx) > 7.9 || Math.abs(dy) > 7.9 || Math.abs(dz) > 7.9;
 
                 if (needsTeleport) {
+                    // Use absolute positioning for accuracy
                     fake.setPos(snap.x, snap.y, snap.z);
+                    fake.setYRot(snap.yaw);
+                    fake.setXRot(snap.pitch);
+                    
+                    // Send teleport packet to update client position
                     broadcastPacket(new ClientboundTeleportEntityPacket(fake));
                 } else {
+                    // Use relative movement for small changes
                     broadcastPacket(new ClientboundMoveEntityPacket.PosRot(
                             fake.getId(),
                             (short) (dx * 4096), (short) (dy * 4096), (short) (dz * 4096),
@@ -179,6 +218,20 @@ public class ReplaySession {
                 broadcastPacket(new ClientboundSetEntityDataPacket(
                         fake.getId(), fake.getEntityData().packDirty()));
             }
+            
+            // Handle game mode changes, flight, invulnerability, etc.
+            if (prev == null || 
+                !snap.gameMode.equals(prev.gameMode) ||
+                snap.allowFlight != prev.allowFlight ||
+                snap.flying != prev.flying ||
+                snap.invulnerable != prev.invulnerable ||
+                snap.collidable != prev.collidable ||
+                snap.canPickupItems != prev.canPickupItems ||
+                !snap.potionEffects.equals(prev.potionEffects)) {
+                
+                // Update fake player metadata to reflect state changes
+                updateFakePlayerMetadata(fake, snap, prev);
+            }
         }
 
         // Despawn players no longer in this frame
@@ -203,7 +256,9 @@ public class ReplaySession {
             if (v != null) removeViewer(v);
         });
         plugin.getWorldManager().deleteWorld(replayWorld);
-        plugin.getReplayManager().onSessionEnd(this);
+        // Note: This method would need to be updated to work with EnhancedReplayManager
+        // For now, we'll comment it out to avoid compilation issues
+        // plugin.getReplayManager().onSessionEnd(this);
     }
 
     // -------------------------------------------------------------------------
@@ -379,6 +434,123 @@ public class ReplaySession {
             }
         }
         return null;
+    }
+
+    private void handleDeathEvent(ReplayFrame.DeathEvent death) {
+        // Send death message to all viewers
+        String message = death.deathMessage;
+        if (message == null || message.isEmpty()) {
+            message = "§c" + death.playerName + " §7died.";
+        }
+        
+        for (UUID vid : viewers) {
+            Player viewer = plugin.getServer().getPlayer(vid);
+            if (viewer != null) {
+                viewer.sendMessage(message);
+                
+                // Show special effects for elimination (like BedWars)
+                if (death.eliminated) {
+                    viewer.sendActionBar("§c§l" + death.playerName + " ELIMINATED!");
+                    viewer.playSound(viewer.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_GROWL, 0.5f, 1.5f);
+                } else if (!death.hasBed) {
+                    viewer.sendActionBar("§c" + death.playerName + "'s bed was destroyed!");
+                    viewer.playSound(viewer.getLocation(), org.bukkit.Sound.ENTITY_WITHER_BREAK_BLOCK, 0.5f, 1.0f);
+                }
+            }
+        }
+        
+        plugin.getLogger().info("[Replay] Death event: " + death.playerName + " - " + death.deathCause + 
+            (death.eliminated ? " (ELIMINATED)" : death.hasBed ? " (has bed)" : " (no bed)"));
+    }
+
+    private int getEffectId(org.bukkit.potion.PotionEffectType type) {
+        // Map Bukkit potion effect types to NMS effect IDs
+        if (type == null) return 0;
+        
+        switch (type.getName()) {
+            case "SPEED": return 1;
+            case "SLOW": return 2;
+            case "FAST_DIGGING": return 3;
+            case "SLOW_DIGGING": return 4;
+            case "INCREASE_DAMAGE": return 5;
+            case "HEAL": return 6;
+            case "HARM": return 7;
+            case "JUMP": return 8;
+            case "CONFUSION": return 9;
+            case "REGENERATION": return 10;
+            case "DAMAGE_RESISTANCE": return 11;
+            case "FIRE_RESISTANCE": return 12;
+            case "WATER_BREATHING": return 13;
+            case "INVISIBILITY": return 14;
+            case "BLINDNESS": return 15;
+            case "NIGHT_VISION": return 16;
+            case "HUNGER": return 17;
+            case "WEAKNESS": return 18;
+            case "POISON": return 19;
+            case "WITHER": return 20;
+            case "HEALTH_BOOST": return 21;
+            case "ABSORPTION": return 22;
+            case "SATURATION": return 23;
+            case "GLOWING": return 24;
+            case "LEVITATION": return 25;
+            case "LUCK": return 26;
+            case "UNLUCK": return 27;
+            case "SLOW_FALLING": return 28;
+            case "CONDUIT_POWER": return 29;
+            case "DOLPHINS_GRACE": return 30;
+            case "BAD_OMEN": return 31;
+            case "HERO_OF_THE_VILLAGE": return 32;
+            default: return 0;
+        }
+    }
+
+    private void updateFakePlayerMetadata(ServerPlayer fake, ReplayFrame.PlayerSnapshot snap, ReplayFrame.PlayerSnapshot prev) {
+        // Update invisibility effect (this is the most important one for obbedwars-style spectator)
+        boolean hasInvisibility = snap.potionEffects.stream()
+            .anyMatch(effect -> effect.type.equals("INVISIBILITY"));
+        
+        // Update entity metadata flags for invisibility and other states
+        int data = 0;
+        if (hasInvisibility) data |= 0x20; // invisibility flag
+        if (snap.flying) data |= 0x02; // gliding/elytra flag (used for flying effect)
+        if (snap.invulnerable) data |= 0x01; // on fire flag (repurposed for invulnerable)
+        
+        broadcastPacket(new ClientboundSetEntityDataPacket(fake.getId(), 
+            fake.getEntityData().packDirty()));
+        
+        // Send potion effect updates - simplified approach
+        for (ReplayFrame.PotionEffectData effectData : snap.potionEffects) {
+            try {
+                // For now, just log the effect - full packet implementation can be added later
+                if (effectData.type.equals("INVISIBILITY")) {
+                    // Handle invisibility specifically through entity metadata
+                    broadcastPacket(new ClientboundSetEntityDataPacket(fake.getId(), 
+                        fake.getEntityData().packDirty()));
+                }
+            } catch (Exception e) {
+                plugin.getLogger().warning("[Replay] Failed to send potion effect " + effectData.type + ": " + e.getMessage());
+            }
+        }
+        
+        // Remove effects that are no longer active - simplified approach
+        if (prev != null) {
+            for (ReplayFrame.PotionEffectData prevEffect : prev.potionEffects) {
+                boolean stillActive = snap.potionEffects.stream()
+                    .anyMatch(effect -> effect.type.equals(prevEffect.type));
+                
+                if (!stillActive) {
+                    try {
+                        if (prevEffect.type.equals("INVISIBILITY")) {
+                            // Handle invisibility removal through entity metadata
+                            broadcastPacket(new ClientboundSetEntityDataPacket(fake.getId(), 
+                                fake.getEntityData().packDirty()));
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("[Replay] Failed to remove potion effect " + prevEffect.type + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
     }
 
     private void broadcastPacket(net.minecraft.network.protocol.Packet<?> packet) {

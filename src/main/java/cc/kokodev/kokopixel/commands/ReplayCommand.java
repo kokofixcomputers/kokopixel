@@ -1,7 +1,7 @@
 package cc.kokodev.kokopixel.commands;
 
 import cc.kokodev.kokopixel.KokoPixel;
-import cc.kokodev.kokopixel.replay.ReplayRecording;
+import cc.kokodev.kokopixel.replay.EnhancedReplayRecording;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -36,7 +36,7 @@ public class ReplayCommand implements CommandExecutor, Listener {
     private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacySection();
     private final Map<UUID, Integer> pages = new HashMap<>();
     // Maps inventory title -> list of recordings shown (so we know which slot = which recording)
-    private final Map<UUID, List<ReplayRecording>> openLists = new HashMap<>();
+    private final Map<UUID, List<EnhancedReplayRecording>> openLists = new HashMap<>();
 
     public ReplayCommand(KokoPixel plugin) {
         this.plugin = plugin;
@@ -55,7 +55,7 @@ public class ReplayCommand implements CommandExecutor, Listener {
     }
 
     private void openList(Player player, int page) {
-        List<ReplayRecording> list = plugin.getReplayManager().getRecordingsFor(player.getUniqueId());
+        List<EnhancedReplayRecording> list = plugin.getReplayManager().getRecordingsFor(player.getUniqueId());
         pages.put(player.getUniqueId(), page);
         openLists.put(player.getUniqueId(), list);
 
@@ -69,7 +69,7 @@ public class ReplayCommand implements CommandExecutor, Listener {
         int end = Math.min(start + PAGE_SIZE, list.size());
 
         for (int i = start; i < end; i++) {
-            ReplayRecording r = list.get(i);
+            EnhancedReplayRecording r = list.get(i);
             long mins = r.durationSeconds() / 60;
             long secs = r.durationSeconds() % 60;
             String date = DATE_FMT.format(Instant.ofEpochMilli(r.recordedAt));
@@ -116,11 +116,11 @@ public class ReplayCommand implements CommandExecutor, Listener {
         if (slot == 45) { openList(player, page - 1); return; }
         if (slot == 53) { openList(player, page + 1); return; }
 
-        List<ReplayRecording> list = openLists.getOrDefault(player.getUniqueId(), Collections.emptyList());
+        List<EnhancedReplayRecording> list = openLists.getOrDefault(player.getUniqueId(), Collections.emptyList());
         int idx = page * PAGE_SIZE + slot;
         if (idx < 0 || idx >= list.size()) return;
 
-        ReplayRecording recording = list.get(idx);
+        EnhancedReplayRecording recording = list.get(idx);
         player.closeInventory();
 
         // Check not already in a game or queue

@@ -39,7 +39,7 @@ public class SpectatorManager {
         p.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false, true));
         p.addPotionEffect(new PotionEffect(PotionEffectType.NIGHT_VISION, Integer.MAX_VALUE, 0, false, false, true));
         giveItems(p, canReturn);
-        p.sendMessage(legacy.deserialize("§7[§bSpectator§7] §eYou are now spectating! Use paper to teleport, bed to return."));
+        p.sendMessage(legacy.deserialize("§7[§bSpectator§7] §eYou are now spectating! Use compass to teleport, head to control replay, bed to return."));
     }
 
     public void enableFrozenSpectator(Player p, boolean canReturn) { enableSpectator(p, canReturn); frozen.add(p.getUniqueId()); p.setWalkSpeed(0); p.setFlySpeed(0); }
@@ -67,11 +67,27 @@ public class SpectatorManager {
     public void cleanup() { for (UUID id : spectators) { Player p = plugin.getServer().getPlayer(id); if (p != null) disableSpectator(p); } spectators.clear(); frozen.clear(); }
 
     private void giveItems(Player p, boolean canReturn) {
-        ItemStack paper = new ItemStack(Material.PAPER); ItemMeta pm = paper.getItemMeta(); pm.displayName(Component.text("§b§lTeleport to Players", NamedTextColor.AQUA)); pm.lore(java.util.Arrays.asList(Component.text("§7Left-click: Previous player"), Component.text("§7Right-click: Next player"))); paper.setItemMeta(pm); p.getInventory().setItem(0, paper);
-        ItemStack bed = new ItemStack(Material.RED_BED); ItemMeta bm = bed.getItemMeta(); bm.displayName(Component.text("§c§lReturn to Lobby", NamedTextColor.RED)); bed.setItemMeta(bm); p.getInventory().setItem(8, bed);
-        if (canReturn) { ItemStack req = new ItemStack(Material.PAPER); ItemMeta rm = req.getItemMeta(); rm.displayName(Component.text("§a§lRequeue & Return", NamedTextColor.GREEN)); rm.lore(java.util.Arrays.asList(Component.text("§7Return to lobby and requeue"))); req.setItemMeta(rm); p.getInventory().setItem(1, req); }
-        ItemStack up = new ItemStack(Material.SUGAR); ItemMeta upm = up.getItemMeta(); upm.displayName(Component.text("§b§lIncrease Speed", NamedTextColor.AQUA)); up.setItemMeta(upm); p.getInventory().setItem(4, up);
-        ItemStack down = new ItemStack(Material.SLIME_BALL); ItemMeta downm = down.getItemMeta(); downm.displayName(Component.text("§e§lDecrease Speed", NamedTextColor.YELLOW)); down.setItemMeta(downm); p.getInventory().setItem(5, down);
+        // Replay controls - simplified hotbar
+        ItemStack compass = new ItemStack(Material.COMPASS);
+        ItemMeta compassMeta = compass.getItemMeta();
+        compassMeta.displayName(Component.text("§b§lTeleport", NamedTextColor.AQUA));
+        compassMeta.lore(java.util.Arrays.asList(Component.text("§7Right-click to open player menu")));
+        compass.setItemMeta(compassMeta);
+        p.getInventory().setItem(0, compass);
+
+        ItemStack playPause = new ItemStack(Material.PLAYER_HEAD);
+        ItemMeta playMeta = playPause.getItemMeta();
+        playMeta.displayName(Component.text("§e§lPlay/Pause", NamedTextColor.YELLOW));
+        playMeta.lore(java.util.Arrays.asList(Component.text("§7Left-click: Skip back 60 ticks"), Component.text("§7Right-click: Toggle pause/play")));
+        playPause.setItemMeta(playMeta);
+        p.getInventory().setItem(4, playPause);
+
+        ItemStack bed = new ItemStack(Material.RED_BED);
+        ItemMeta bedMeta = bed.getItemMeta();
+        bedMeta.displayName(Component.text("§c§lLeave Replay", NamedTextColor.RED));
+        bedMeta.lore(java.util.Arrays.asList(Component.text("§7Exit replay mode")));
+        bed.setItemMeta(bedMeta);
+        p.getInventory().setItem(8, bed);
     }
 
     private void storeState(Player p) { p.setMetadata("kp_prev_gm", new org.bukkit.metadata.FixedMetadataValue(plugin, p.getGameMode())); p.setMetadata("kp_prev_flight", new org.bukkit.metadata.FixedMetadataValue(plugin, p.getAllowFlight())); }

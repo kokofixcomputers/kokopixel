@@ -13,7 +13,7 @@ import cc.kokodev.kokopixel.queue.QueueManager;
 import cc.kokodev.kokopixel.ranks.RankManager;
 import cc.kokodev.kokopixel.spectator.SpectatorManager;
 import cc.kokodev.kokopixel.friends.FriendManager;
-import cc.kokodev.kokopixel.replay.ReplayManager;
+import cc.kokodev.kokopixel.replay.EnhancedReplayManager;
 import cc.kokodev.kokopixel.spectator.SpectatorListener;
 import cc.kokodev.kokopixel.world.WorldManager;
 import io.papermc.lib.PaperLib;
@@ -39,7 +39,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     private SpectatorManager spectatorManager;
     private GameSelectorMenu gameSelectorMenu;
     private AdminGUI adminGUI;
-    private ReplayManager replayManager;
+    private EnhancedReplayManager replayManager;
     private FriendManager friendManager;
     private cc.kokodev.kokopixel.commands.MsgCommand msgCommand;
     private cc.kokodev.kokopixel.listeners.TabListener tabListener;
@@ -78,7 +78,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
         this.spectatorManager = new SpectatorManager(this);
         this.gameSelectorMenu = new GameSelectorMenu(this);
         this.adminGUI = new AdminGUI(this);
-        this.replayManager = new ReplayManager(this);
+        this.replayManager = new EnhancedReplayManager(this);
         this.friendManager = new FriendManager(this);
         this.msgCommand = new cc.kokodev.kokopixel.commands.MsgCommand(this);
         
@@ -204,7 +204,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     public SpectatorManager getSpectatorManager() { return spectatorManager; }
     public GameSelectorMenu getGameSelectorMenu() { return gameSelectorMenu; }
     public AdminGUI getAdminGUI() { return adminGUI; }
-    public ReplayManager getReplayManager() { return replayManager; }
+    public EnhancedReplayManager getReplayManager() { return replayManager; }
     public FriendManager getFriendManager() { return friendManager; }
     public cc.kokodev.kokopixel.commands.MsgCommand getMsgCommand() { return msgCommand; }
     public cc.kokodev.kokopixel.listeners.TabListener getTabListener() { return tabListener; }
