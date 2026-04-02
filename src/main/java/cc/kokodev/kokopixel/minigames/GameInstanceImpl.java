@@ -132,6 +132,7 @@ public abstract class GameInstanceImpl implements GameInstance {
     @Override public void runTaskTimer(Runnable r, long d, long p) { tasks.add(new BukkitRunnable() { @Override public void run() { if (state != GameState.ENDED) r.run(); } }.runTaskTimer(plugin, d, p)); }
     @Override public JavaPlugin getPlugin() { return plugin; }
     @Override public Map<String, Object> getData() { return data; }
+    public Minigame getMinigame() { return minigame; }
 
     public void addPlayer(Player p) {
         GamePlayerImpl gp = new GamePlayerImpl(p, this);
@@ -156,8 +157,8 @@ public abstract class GameInstanceImpl implements GameInstance {
                 GameTeamImpl team = playerTeams.remove(p.getUniqueId());
                 if (team != null) team.removeMember(gp);
                 onPlayerLeave(gp);
-                // Only restore state if the player is still online (not a disconnect/kick)
-                if (p.isOnline()) {
+                // Only restore state/teleport to lobby if the minigame doesn't handle death itself
+                if (p.isOnline() && !minigame.handlesDeath()) {
                     p.setGameMode(org.bukkit.GameMode.ADVENTURE);
                     p.setHealth(20); p.setFoodLevel(20); p.setSaturation(10);
                     p.getActivePotionEffects().clear();

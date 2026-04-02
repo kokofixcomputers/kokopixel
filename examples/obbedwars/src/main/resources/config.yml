@@ -1,0 +1,10 @@
+# OBBedWars Configuration
+
+# Teams — each team is one solo player. Name must match a ChatColor name.
+# KokoPixel uses the team name to look up ChatColor, so use valid names:
+# red, blue, yellow, lime, aqua, gold, light_purple, white
+teams:
+  - red
+  - blue
+  - yellow
+  - lime

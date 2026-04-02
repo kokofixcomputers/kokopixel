@@ -3,10 +3,12 @@ package cc.kokodev.kokopixel.listeners;
 import cc.kokodev.kokopixel.KokoPixel;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -30,6 +32,14 @@ public class GameListener implements Listener {
     public void onBlockBreak(BlockBreakEvent e) {
         String world = e.getPlayer().getWorld().getName();
         if (isLobby(world) || isSpectator(e.getPlayer())) { e.setCancelled(true); return; }
+        // Only record if the break actually happens (not cancelled by another plugin)
+        // Use MONITOR priority so we see the final cancelled state
+    }
+
+    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockBreakMonitor(BlockBreakEvent e) {
+        String world = e.getPlayer().getWorld().getName();
+        if (isLobby(world) || isSpectator(e.getPlayer())) return;
         plugin.getMinigameManager().getGameIdForWorld(world).ifPresent(gameId ->
             plugin.getReplayManager().recordBlockChange(gameId,
                 e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ(), "AIR"));
@@ -43,6 +53,18 @@ public class GameListener implements Listener {
             plugin.getReplayManager().recordBlockChange(gameId,
                 e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ(),
                 e.getBlock().getType().name()));
+    }
+
+    @EventHandler
+    public void onEntityExplode(EntityExplodeEvent e) {
+        String world = e.getLocation().getWorld().getName();
+        if (isLobby(world)) return;
+        plugin.getMinigameManager().getGameIdForWorld(world).ifPresent(gameId -> {
+            for (org.bukkit.block.Block block : e.blockList()) {
+                plugin.getReplayManager().recordBlockChange(gameId,
+                        block.getX(), block.getY(), block.getZ(), "AIR");
+            }
+        });
     }
 
     @EventHandler

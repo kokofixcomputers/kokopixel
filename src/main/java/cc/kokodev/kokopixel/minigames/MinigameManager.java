@@ -41,8 +41,6 @@ public class MinigameManager {
     public void addTeamSpawnPoint(String name, String team, Location l) { Minigame m = getMinigame(name); if (m != null) m.addTeamSpawnPoint(team, l); }
 
     public void startGame(Minigame mg, List<Player> players, boolean isPrivate) {
-        // Copy the world async to avoid locking conflicts with Minecraft's session.lock,
-        // then start the game on the main thread once the world is ready.
         plugin.getWorldManager().createGameWorldAsync(mg, w -> {
             if (w == null) { players.forEach(p -> p.sendMessage("§cFailed to create game world!")); return; }
             GameInstanceImpl game = mg.createInstance(w);
@@ -51,7 +49,14 @@ public class MinigameManager {
             activeGames.put(game.getGameId(), game);
             worldGames.put(w.getName(), game.getGameId());
             mg.addGame(game);
-            for (Player p : players) { game.addPlayer(p); playerGames.put(p.getUniqueId(), game); plugin.getQueueManager().removeFromQueue(p); }
+            for (Player p : players) {
+                game.addPlayer(p);
+                playerGames.put(p.getUniqueId(), game);
+                // Clean up any residual QueueManager playerQueues entry.
+                // GameQueue already cleared its own list; this just ensures
+                // QueueManager's playerQueues map is also clean.
+                plugin.getQueueManager().silentRemove(p);
+            }
             game.start();
         });
     }

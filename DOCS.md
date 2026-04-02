@@ -547,3 +547,24 @@ After registering, set up the template world and spawn points in-game:
 ```
 
 Players can then queue via `/minigame join deathmatch` or the game selector GUI.
+
+---
+
+## Death Handling
+
+By default KokoPixel handles player death by putting them in spectator mode and teleporting them to the lobby when `setAlive(false)` is called or when `removePlayer` fires.
+
+If your minigame needs custom death logic (respawning, in-world spectating, elimination checks), call `setHandlesDeath(true)` in your `Minigame` constructor:
+
+```java
+public BedWarsMinigame(JavaPlugin plugin) {
+    super("bedwars", "&cBedWars", 2, 4, plugin, BedWarsGame.class);
+    setHandlesDeath(true); // we manage respawn and elimination ourselves
+}
+```
+
+When `handlesDeath()` returns `true`:
+- `GamePlayerImpl.setAlive(false)` does NOT set `GameMode.SPECTATOR`
+- `GameInstanceImpl.removePlayer` does NOT teleport the player to lobby or clear their inventory
+
+Your `onPlayerLeave` and `onGameEnd` callbacks are still fired normally. You are responsible for teleporting eliminated players and cleaning up their state.

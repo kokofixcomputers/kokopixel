@@ -1,0 +1,17 @@
+name: OBBedWars
+version: '1.0.0'
+main: cc.kokodev.obbedwars.OBBedWars
+api-version: '1.21'
+author: KokoDev
+description: OneBlock BedWars example minigame for KokoPixel
+depend: [KokoPixel]
+
+commands:
+  obbedwars:
+    description: OBBedWars setup commands
+    permission: obbedwars.setup
+
+permissions:
+  obbedwars.setup:
+    default: op
+    description: Access to OBBedWars setup commands

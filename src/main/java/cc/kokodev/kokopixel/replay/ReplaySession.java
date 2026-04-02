@@ -131,20 +131,31 @@ public class ReplaySession {
             ReplayFrame.PlayerSnapshot prev = lastSnapshot.get(id);
             lastSnapshot.put(id, snap);
 
-            // Movement
-            double dx = snap.x - (prev != null ? prev.x : snap.x);
-            double dy = snap.y - (prev != null ? prev.y : snap.y);
-            double dz = snap.z - (prev != null ? prev.z : snap.z);
-            boolean moved = prev == null || dx != 0 || dy != 0 || dz != 0;
+            boolean moved = prev == null || snap.x != prev.x || snap.y != prev.y || snap.z != prev.z;
             boolean rotated = prev == null || snap.yaw != prev.yaw || snap.pitch != prev.pitch;
 
             if (moved || rotated) {
-                broadcastPacket(new ClientboundMoveEntityPacket.PosRot(
-                        fake.getId(),
-                        (short) (dx * 4096), (short) (dy * 4096), (short) (dz * 4096),
-                        (byte) (snap.yaw * 256f / 360f),
-                        (byte) (snap.pitch * 256f / 360f),
-                        snap.onGround));
+                double dx = snap.x - (prev != null ? prev.x : snap.x);
+                double dy = snap.y - (prev != null ? prev.y : snap.y);
+                double dz = snap.z - (prev != null ? prev.z : snap.z);
+
+                // ClientboundMoveEntityPacket uses short deltas — max ±8 blocks per tick.
+                // If the player teleported (death/respawn) the delta overflows, so send
+                // a teleport packet instead.
+                boolean needsTeleport = prev == null
+                        || Math.abs(dx) > 7.9 || Math.abs(dy) > 7.9 || Math.abs(dz) > 7.9;
+
+                if (needsTeleport) {
+                    fake.setPos(snap.x, snap.y, snap.z);
+                    broadcastPacket(new ClientboundTeleportEntityPacket(fake));
+                } else {
+                    broadcastPacket(new ClientboundMoveEntityPacket.PosRot(
+                            fake.getId(),
+                            (short) (dx * 4096), (short) (dy * 4096), (short) (dz * 4096),
+                            (byte) (snap.yaw * 256f / 360f),
+                            (byte) (snap.pitch * 256f / 360f),
+                            snap.onGround));
+                }
                 broadcastPacket(new ClientboundRotateHeadPacket(
                         fake, (byte) (snap.yaw * 256f / 360f)));
             }

@@ -35,7 +35,12 @@ public class GamePlayerImpl implements GamePlayer {
     @Override public void addKill() { kills++; game.incrementStat(player.getUniqueId(), "kills", 1); }
     @Override public void addDeath() { deaths++; game.incrementStat(player.getUniqueId(), "deaths", 1); }
     @Override public boolean isAlive() { return alive; }
-    @Override public void setAlive(boolean a) { this.alive = a; if (!a) player.setGameMode(GameMode.SPECTATOR); }
+    @Override public void setAlive(boolean a) {
+        this.alive = a;
+        if (!a && !game.getMinigame().handlesDeath()) {
+            player.setGameMode(GameMode.SPECTATOR);
+        }
+    }
     @Override public int getStat(String key) { return customStats.getOrDefault(key, 0); }
     @Override public void setStat(String key, int v) { customStats.put(key, v); game.setStat(player.getUniqueId(), key, v); }
     @Override public void incrementStat(String key) { customStats.merge(key, 1, Integer::sum); game.incrementStat(player.getUniqueId(), key, 1); }

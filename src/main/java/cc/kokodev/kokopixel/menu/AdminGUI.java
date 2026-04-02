@@ -159,6 +159,10 @@ public class AdminGUI implements Listener {
         if (!admin.hasPermission("kokopixel.admin")) return;
 
         String title = legacy.serialize(e.getView().title());
+
+        // Only handle our own GUIs — don't cancel clicks in other inventories
+        if (!title.equals(TITLE_MAIN) && !title.startsWith(TITLE_GAMES) && !title.startsWith(TITLE_REPLAYS)) return;
+
         e.setCancelled(true);
 
         if (e.getCurrentItem() == null || e.getCurrentItem().getType() == Material.AIR) return;

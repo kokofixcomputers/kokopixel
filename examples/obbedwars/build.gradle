@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '9.1.0'
+}
+
+group = 'cc.kokodev.obbedwars'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    // Compile directly against KokoPixel's compiled classes and its compile classpath
+    compileOnly files(project(':').sourceSets.main.output.classesDirs)
+    compileOnly files(project(':').configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.collect { it.file })
+    compileOnly 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
+}
+
+// Ensure KokoPixel is compiled before we try to compile the example
+compileJava.dependsOn(':compileJava')
+
+shadowJar {
+    archiveClassifier.set('')
+}
+
+jar.enabled = false
+assemble.dependsOn(shadowJar)

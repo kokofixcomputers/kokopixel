@@ -74,6 +74,12 @@ public class QueueManager {
         return false;
     }
 
+    /** Removes a player from the internal playerQueues map only, without calling GameQueue.removePlayer.
+     *  Used when the game has already started and the queue cleared itself. */
+    public void silentRemove(Player p) {
+        playerQueues.remove(p.getUniqueId());
+    }
+
     public void removePartyFromQueue(Party party) {
         GameQueue q = partyQueues.remove(party.getPartyId());
         if (q != null) { for (Player m : party.getOnlineMembers()) { playerQueues.remove(m.getUniqueId()); q.removePlayer(m); } }

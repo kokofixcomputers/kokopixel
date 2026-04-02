@@ -18,8 +18,30 @@ public class GameTeamImpl implements GameTeam {
     private int score = 0;
     private boolean eliminated = false;
 
-    public GameTeamImpl(String name) { this(name, ChatColor.valueOf(name.toUpperCase())); }
+    public GameTeamImpl(String name) { this(name, resolveColor(name)); }
     public GameTeamImpl(String name, ChatColor color) { this.name = name; this.color = color; }
+
+    /**
+     * Resolves a team name to a ChatColor.
+     * Tries exact match first, then common aliases (lime→GREEN, purple→LIGHT_PURPLE, etc.).
+     * Falls back to WHITE so a bad name never crashes the game.
+     */
+    private static ChatColor resolveColor(String name) {
+        // Direct match
+        try { return ChatColor.valueOf(name.toUpperCase()); } catch (IllegalArgumentException ignored) {}
+        // Common aliases minigame devs might use
+        return switch (name.toLowerCase()) {
+            case "lime"         -> ChatColor.GREEN;
+            case "purple"       -> ChatColor.LIGHT_PURPLE;
+            case "pink"         -> ChatColor.LIGHT_PURPLE;
+            case "cyan"         -> ChatColor.AQUA;
+            case "orange"       -> ChatColor.GOLD;
+            case "gray", "grey" -> ChatColor.GRAY;
+            case "darkgray", "dark_gray", "darkgrey" -> ChatColor.DARK_GRAY;
+            case "lightblue", "light_blue" -> ChatColor.AQUA;
+            default             -> ChatColor.WHITE;
+        };
+    }
     @Override public String getName() { return name; }
     @Override public ChatColor getColor() { return color; }
     @Override public List<GamePlayer> getMembers() { return new ArrayList<>(members); }

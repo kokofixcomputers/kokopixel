@@ -77,14 +77,26 @@ public class GameQueue {
     private void cancelCountdown() { if (countdownTaskId != -1) { plugin.getServer().getScheduler().cancelTask(countdownTaskId); broadcast("§cCountdown cancelled."); countdownActive = false; } }
 
     private void startGame() {
-        List<Player> list = players.stream().map(uid -> plugin.getServer().getPlayer(uid)).filter(p -> p != null && p.isOnline()).toList();
+        List<Player> list = players.stream()
+                .map(uid -> plugin.getServer().getPlayer(uid))
+                .filter(p -> p != null && p.isOnline())
+                .toList();
         if (list.isEmpty()) return;
         broadcast("§a§lGame starting now!");
-        Map<UUID, Party> parties = new HashMap<>(playerParties);
+        // Clear queue state immediately so removePlayer callbacks during world load
+        // don't see a shrinking player list and cancel the (already-fired) countdown.
+        List<UUID> snapshot = new ArrayList<>(players);
+        Map<UUID, Party> partiesSnapshot = new HashMap<>(playerParties);
+        players.clear();
+        playerParties.clear();
+        countdownActive = false;
+        // MinigameManager.startGame handles removeFromQueue for each player inside
+        // its async callback — we must NOT call it here again or it double-removes.
         plugin.getMinigameManager().startGame(minigame, list, type == QueueType.PRIVATE);
-        for (UUID id : new ArrayList<>(players)) { Player p = plugin.getServer().getPlayer(id); if (p != null) plugin.getQueueManager().removeFromQueue(p); }
-        players.clear(); playerParties.clear(); countdownActive = false;
-        for (Party party : parties.values()) if (party != null) plugin.getQueueManager().removePartyFromQueue(party);
+        // Clean up party queue entries
+        for (Party party : partiesSnapshot.values()) {
+            if (party != null) plugin.getQueueManager().removePartyFromQueue(party);
+        }
     }
 
     private void broadcast(String msg) { Component c = Component.text("[" + minigame.getDisplayName() + "] ", NamedTextColor.GOLD).append(Component.text(msg, NamedTextColor.WHITE)); for (UUID id : players) { Player p = plugin.getServer().getPlayer(id); if (p != null) p.sendMessage(c); } }

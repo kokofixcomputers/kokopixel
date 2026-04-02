@@ -24,6 +24,7 @@ public abstract class Minigame {
     private final Map<String, List<Location>> teamSpawnPoints = new HashMap<>();
     private final List<String> teams = new ArrayList<>();
     private boolean supportsTeams = false;
+    private boolean handlesDeath = false; // if true, KokoPixel skips default death/spectator handling
     private List<GameInstanceImpl> activeGames = new ArrayList<>();
     private final File configFile;
 
@@ -51,6 +52,9 @@ public abstract class Minigame {
     public void clearSpawnPoints() { spawnPoints.clear(); saveToConfig(); }
     public boolean supportsTeams() { return supportsTeams; }
     public void setSupportsTeams(boolean b) { this.supportsTeams = b; saveToConfig(); }
+    public boolean handlesDeath() { return handlesDeath; }
+    /** Call this in your Minigame constructor to opt out of KokoPixel's default death handling. */
+    public void setHandlesDeath(boolean b) { this.handlesDeath = b; }
     public List<String> getTeams() { return teams; }
     public void addTeam(String team) { teams.add(team); teamSpawnPoints.putIfAbsent(team, new ArrayList<>()); saveToConfig(); }
     public void addTeamSpawnPoint(String team, Location loc) { teamSpawnPoints.computeIfAbsent(team, k -> new ArrayList<>()).add(loc.clone()); saveToConfig(); }
@@ -63,10 +67,16 @@ public abstract class Minigame {
     public GameInstanceImpl createInstance(World world) {
         try {
             GameInstanceImpl game = gameClass.getConstructor(Minigame.class, World.class, JavaPlugin.class).newInstance(this, world, plugin);
-            spawnPoints.forEach(s -> game.addSpawnPoint(s.clone()));
-            teamSpawnPoints.forEach((t, list) -> list.forEach(s -> game.addTeamSpawnPoint(t, s.clone())));
+            // Remap spawn points to the cloned world — s.clone() keeps the template World reference
+            spawnPoints.forEach(s -> game.addSpawnPoint(remapToWorld(s, world)));
+            teamSpawnPoints.forEach((t, list) -> list.forEach(s -> game.addTeamSpawnPoint(t, remapToWorld(s, world))));
             return game;
         } catch (Exception e) { e.printStackTrace(); return null; }
+    }
+
+    /** Creates a copy of a location with its world replaced by the target world. */
+    private static Location remapToWorld(Location loc, World target) {
+        return new Location(target, loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
     }
 
     private void loadFromConfig() {
