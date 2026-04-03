@@ -65,6 +65,9 @@ public class EnhancedGameRecorder {
         // Capture block changes
         captureBlockChanges(frame);
         
+        // Capture entities
+        captureEntities(frame);
+        
         frames.add(frame);
         
         // Update last states for next tick
@@ -72,6 +75,77 @@ public class EnhancedGameRecorder {
         for (Map.Entry<UUID, ReplayData.PlayerState> entry : frame.playerStates.entrySet()) {
             lastPlayerStates.put(entry.getKey(), entry.getValue());
         }
+    }
+
+    private void captureEntities(ReplayData frame) {
+        // Capture all entities in the game world around players
+        int radius = 50; // Capture entities within 50 blocks
+        for (ReplayData.PlayerState state : frame.playerStates.values()) {
+            int centerX = (int) state.x;
+            int centerY = (int) state.y;
+            int centerZ = (int) state.z;
+            
+            // Get all entities in range
+            org.bukkit.Location centerLocation = new org.bukkit.Location(game.getWorld(), centerX, centerY, centerZ);
+            java.util.Collection<org.bukkit.entity.Entity> entities = game.getWorld().getNearbyEntities(centerLocation, radius, radius, radius);
+            
+            for (org.bukkit.entity.Entity entity : entities) {
+                // Skip players (they're handled separately)
+                if (entity instanceof org.bukkit.entity.Player) continue;
+                
+                // Create entity state for recording
+                UUID entityId = entity.getUniqueId();
+                String entityType = getEntityType(entity);
+                double x = entity.getLocation().getX();
+                double y = entity.getLocation().getY();
+                double z = entity.getLocation().getZ();
+                float yaw = entity.getLocation().getYaw();
+                float pitch = entity.getLocation().getPitch();
+                
+                // Get velocity
+                org.bukkit.util.Vector velocity = entity.getVelocity();
+                double velocityX = velocity.getX();
+                double velocityY = velocity.getY();
+                double velocityZ = velocity.getZ();
+                
+                // Get material for blocks/items
+                String material = null;
+                int customModelData = 0;
+                Map<String, Object> metadata = new HashMap<>();
+                
+                if (entity instanceof org.bukkit.entity.FallingBlock) {
+                    org.bukkit.entity.FallingBlock fallingBlock = (org.bukkit.entity.FallingBlock) entity;
+                    if (fallingBlock.getBlockData() != null) {
+                        material = fallingBlock.getBlockData().getMaterial().name();
+                    }
+                } else if (entity instanceof org.bukkit.entity.Item) {
+                    org.bukkit.entity.Item item = (org.bukkit.entity.Item) entity;
+                    if (item.getItemStack() != null) {
+                        material = item.getItemStack().getType().name();
+                    }
+                } else if (entity instanceof org.bukkit.entity.TNTPrimed) {
+                    org.bukkit.entity.TNTPrimed tnt = (org.bukkit.entity.TNTPrimed) entity;
+                    // Store TNT specific data
+                    metadata.put("fuseTicks", tnt.getFuseTicks());
+                    material = "TNT";
+                }
+                
+                frame.entityStates.add(new ReplayData.EntityState(
+                    entityId, entityType, x, y, z, yaw, pitch,
+                    velocityX, velocityY, velocityZ, material, customModelData, metadata));
+            }
+        }
+    }
+    
+    private String getEntityType(org.bukkit.entity.Entity entity) {
+        if (entity instanceof org.bukkit.entity.TNTPrimed) return "PRIMED_TNT";
+        if (entity instanceof org.bukkit.entity.Arrow) return "ARROW";
+        if (entity instanceof org.bukkit.entity.Snowball) return "SNOWBALL";
+        if (entity instanceof org.bukkit.entity.Fireball) return "FIREBALL";
+        if (entity instanceof org.bukkit.entity.FallingBlock) return "FALLING_BLOCK";
+        if (entity instanceof org.bukkit.entity.Item) return "ITEM";
+        if (entity instanceof org.bukkit.entity.Player) return "PLAYER";
+        return "ANY_ENTITY";
     }
 
     private void captureBlockChanges(ReplayData frame) {
@@ -141,24 +215,24 @@ public class EnhancedGameRecorder {
     }
 
     /** Record a block change */
-    public void recordBlockChange(int x, int y, int z, String oldMaterial, String newMaterial) {
+    public void recordBlockChange(int x, int y, int z, String oldMaterial, String newMaterial, boolean cancelled) {
         if (stopped) return;
         
         // Track block changes for recording
         String key = x + "," + y + "," + z;
         Material previousMaterial = lastBlockStates.get(key);
         
-        // Add block change to current frame
-        if (!frames.isEmpty()) {
+        // Add block change to current frame only if not cancelled
+        if (!cancelled && !frames.isEmpty()) {
             ReplayData currentFrame = frames.get(frames.size() - 1);
             currentFrame.blockChanges.add(new ReplayData.BlockChange(x, y, z, 
                 previousMaterial != null ? previousMaterial.name() : oldMaterial, 
-                newMaterial));
+                newMaterial, cancelled));
             
             // Debug logging
             plugin.getLogger().info("[Replay] Recorded block change: " + x + "," + y + "," + z + 
                 " from " + (previousMaterial != null ? previousMaterial.name() : oldMaterial) + 
-                " to " + newMaterial);
+                " to " + newMaterial + (cancelled ? " (CANCELLED)" : ""));
         }
         
         // Update tracking

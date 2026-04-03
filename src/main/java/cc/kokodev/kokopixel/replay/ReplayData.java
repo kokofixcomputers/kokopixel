@@ -170,13 +170,15 @@ public class ReplayData implements Serializable {
         
         public final int x, y, z;
         public final String oldMaterial, newMaterial;
+        public final boolean cancelled;
         
-        public BlockChange(int x, int y, int z, String oldMaterial, String newMaterial) {
+        public BlockChange(int x, int y, int z, String oldMaterial, String newMaterial, boolean cancelled) {
             this.x = x;
             this.y = y;
             this.z = z;
             this.oldMaterial = oldMaterial;
             this.newMaterial = newMaterial;
+            this.cancelled = cancelled;
         }
     }
     

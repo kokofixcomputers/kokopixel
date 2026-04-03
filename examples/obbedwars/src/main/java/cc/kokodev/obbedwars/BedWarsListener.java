@@ -12,7 +12,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.*;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerBedEnterEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -28,19 +30,34 @@ public class BedWarsListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onBlockBreak(BlockBreakEvent event) {
-        Block block = event.getBlock();
-        if (!(block.getBlockData() instanceof Bed)) return;
         Player player = event.getPlayer();
         BedWarsGame game = getActiveGame(player);
         if (game == null) return;
+        
+        // Prevent spectators from breaking blocks
+        if (game.isSpectator(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
+        
+        Block block = event.getBlock();
+        if (!(block.getBlockData() instanceof Bed)) return;
         if (game.handleBedBreak(player, block)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (event.getBlock().getType() != Material.TNT) return;
-        BedWarsGame game = getActiveGame(event.getPlayer());
+        Player player = event.getPlayer();
+        BedWarsGame game = getActiveGame(player);
         if (game == null) return;
+        
+        // Prevent spectators from placing blocks
+        if (game.isSpectator(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
+        
+        if (event.getBlock().getType() != Material.TNT) return;
         // Don't cancel — cancelling returns the item to inventory (infinite TNT exploit).
         // Instead let the block place, then replace it with air and spawn primed TNT.
         Block block = event.getBlock();
@@ -61,6 +78,12 @@ public class BedWarsListener implements Listener {
         Player player = event.getPlayer();
         BedWarsGame game = getActiveGame(player);
         if (game == null) return;
+        
+        // Prevent spectators from interacting
+        if (game.isSpectator(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
         
         // Check if we're holding a fireball
         ItemStack item = event.getItem();
@@ -165,7 +188,76 @@ public class BedWarsListener implements Listener {
         }, 1L);
     }
 
-    // PlayerRespawnEvent no longer needed — spigot().respawn() handles it directly.
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onEntityDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player victim) {
+            BedWarsGame game = getActiveGame(victim);
+            if (game == null) return;
+            
+            // Prevent spectators from dealing damage
+            if (event instanceof EntityDamageByEntityEvent edbe && edbe.getDamager() instanceof Player damager) {
+                if (game.isSpectator(damager.getUniqueId())) {
+                    event.setCancelled(true);
+                    return;
+                }
+            }
+            
+            // Prevent spectators from taking damage (they should be invulnerable already)
+            if (game.isSpectator(victim.getUniqueId())) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onProjectileLaunch(ProjectileLaunchEvent event) {
+        if (event.getEntity().getShooter() instanceof Player player) {
+            BedWarsGame game = getActiveGame(player);
+            if (game == null) return;
+            
+            // Prevent spectators from launching projectiles
+            if (game.isSpectator(player.getUniqueId())) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerPickupItem(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            BedWarsGame game = getActiveGame(player);
+            if (game == null) return;
+            
+            // Prevent spectators from picking up items
+            if (game.isSpectator(player.getUniqueId())) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerDropItem(PlayerDropItemEvent event) {
+        BedWarsGame game = getActiveGame(event.getPlayer());
+        if (game == null) return;
+        
+        // Prevent spectators from dropping items
+        if (game.isSpectator(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (event.getWhoClicked() instanceof Player player) {
+            BedWarsGame game = getActiveGame(player);
+            if (game == null) return;
+            
+            // Prevent spectators from modifying inventory
+            if (game.isSpectator(player.getUniqueId())) {
+                event.setCancelled(true);
+            }
+        }
+    }
 
     private String buildDeathMessage(PlayerDeathEvent event) {
         Player victim = event.getEntity();

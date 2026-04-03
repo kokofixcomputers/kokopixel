@@ -1,6 +1,9 @@
 package cc.kokodev.kokopixel.replay;
 
 import cc.kokodev.kokopixel.KokoPixel;
+import cc.kokodev.kokopixel.replay.EnhancedReplayRecording;
+import cc.kokodev.kokopixel.replay.ReplayData;
+
 import com.mojang.authlib.GameProfile;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.level.ServerLevel;
@@ -8,6 +11,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.animal.Fox;
+
 import org.bukkit.*;
 import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
@@ -153,6 +157,12 @@ public class EnhancedReplaySession {
 
         // Apply block changes
         for (ReplayData.BlockChange bc : frame.blockChanges) {
+            // Skip cancelled block changes during replay playback
+            if (bc.cancelled) {
+                plugin.getLogger().info("[Replay] Skipping cancelled block change at " + bc.x + "," + bc.y + "," + bc.z);
+                continue;
+            }
+            
             Material mat = Material.matchMaterial(bc.newMaterial);
             if (mat != null) {
                 replayWorld.getBlockAt(bc.x, bc.y, bc.z).setType(mat, false);
@@ -172,6 +182,11 @@ public class EnhancedReplaySession {
         // Handle animation events (hand swings, etc.)
         for (ReplayData.AnimationEvent animation : frame.animationEvents) {
             handleAnimationEvent(animation);
+        }
+
+        // Handle entity states (TNT, arrows, etc.)
+        for (ReplayData.EntityState entityState : frame.entityStates) {
+            handleEntityState(entityState);
         }
 
         // Update all fake players
@@ -658,9 +673,68 @@ public class EnhancedReplaySession {
             Player v = plugin.getServer().getPlayer(vid);
             if (v != null) removeViewer(v);
         });
+        
+        // Clean up replay world
         plugin.getWorldManager().deleteWorld(replayWorld);
         // Note: This would need to be updated to use EnhancedReplayManager
-        // For now, we'll skip calling onSessionEnd to avoid compilation issues
+        // For now, we'll skip calling onSessionEnd
         // plugin.getReplayManager().onSessionEnd(this);
+    }
+
+    private void handleEntityState(ReplayData.EntityState entityState) {
+        try {
+            // Use /summon commands for simple entity spawning
+            String x = String.format("%.2f", entityState.x);
+            String y = String.format("%.2f", entityState.y);
+            String z = String.format("%.2f", entityState.z);
+            
+            String command = null;
+            switch (entityState.entityType) {
+                case "PRIMED_TNT":
+                    command = String.format("summon minecraft:tnt %s %s %s {Fuse:%d}", 
+                        x, y, z, entityState.metadata.containsKey("fuseTicks") ? 
+                            entityState.metadata.get("fuseTicks") : 80);
+                    break;
+                case "FALLING_BLOCK":
+                    String material = entityState.material != null ? entityState.material : "stone";
+                    command = String.format("summon minecraft:falling_block %s %s %s {BlockState:{Name:\"minecraft:%s\"}}", 
+                        x, y, z, material.toLowerCase());
+                    break;
+                case "ITEM":
+                    String itemMaterial = entityState.material != null ? entityState.material : "stone";
+                    command = String.format("summon minecraft:item %s %s %s {Item:{id:\"minecraft:%s\",Count:1}}", 
+                        x, y, z, itemMaterial.toLowerCase());
+                    break;
+                case "ARROW":
+                    command = String.format("summon minecraft:arrow %s %s %s", x, y, z);
+                    break;
+                case "SNOWBALL":
+                    command = String.format("summon minecraft:snowball %s %s %s", x, y, z);
+                    break;
+                case "FIREBALL":
+                    command = String.format("summon minecraft:fireball %s %s %s", x, y, z);
+                    break;
+                default:
+                    plugin.getLogger().warning("[Replay] Unknown entity type: " + entityState.entityType);
+                    return;
+            }
+            
+            if (command != null) {
+                // Execute the summon command as console
+                plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command);
+                
+                plugin.getLogger().info("[Replay] Summoned " + entityState.entityType + " at " + x + "," + y + "," + z);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Replay] Failed to summon entity " + entityState.entityType + 
+                " at " + entityState.x + "," + entityState.y + "," + entityState.z + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Get the replay world for damage/explosion prevention
+     */
+    public org.bukkit.World getReplayWorld() {
+        return replayWorld;
     }
 }

@@ -93,10 +93,10 @@ public class EnhancedReplayManager implements Listener {
     }
 
     /* Forward a block change to active recorder for that world's game. */
-    public void recordBlockChange(UUID gameId, int x, int y, int z, String oldMaterial, String newMaterial) {
+    public void recordBlockChange(UUID gameId, int x, int y, int z, String oldMaterial, String newMaterial, boolean cancelled) {
         // TODO: Implement entity recording once compilation issues are resolved
         EnhancedGameRecorder rec = activeRecorders.get(gameId);
-        if (rec != null) rec.recordBlockChange(x, y, z, oldMaterial, newMaterial);
+        if (rec != null) rec.recordBlockChange(x, y, z, oldMaterial, newMaterial, cancelled);
     }
     
     // -------------------------------------------------------------------------
@@ -394,6 +394,14 @@ public class EnhancedReplayManager implements Listener {
         if (gameId == null) return;
         plugin.getServer().getScheduler().runTaskLater(plugin,
                 () -> startOrJoinSession(player, gameId), 20L);
+    }
+
+    /**
+     * Check if a world is a replay world (used for damage/explosion prevention)
+     */
+    public boolean isReplayWorld(String worldName) {
+        return activeSessions.values().stream()
+                .anyMatch(session -> session.getReplayWorld().getName().equals(worldName));
     }
 
     // -------------------------------------------------------------------------

@@ -35,6 +35,8 @@ public class BedWarsGame extends GameInstanceImpl {
     private final Map<String, Location> bedLocations = new LinkedHashMap<>();
     // diamond gen locations in the cloned world
     private final List<Location> diamondGens = new ArrayList<>();
+    // players currently in spectator mode (death countdown or eliminated)
+    private final Set<UUID> spectatorPlayers = new HashSet<>();
 
     private Scoreboard scoreboard;
     private org.bukkit.scoreboard.Objective objective;
@@ -313,6 +315,7 @@ public class BedWarsGame extends GameInstanceImpl {
      * Does NOT give spectator items or teleport — player stays where they are.
      */
     private void enableInWorldSpectator(Player player) {
+        spectatorPlayers.add(player.getUniqueId());
         player.setGameMode(GameMode.SURVIVAL);
         player.setAllowFlight(true);
         player.setFlying(true);
@@ -326,6 +329,7 @@ public class BedWarsGame extends GameInstanceImpl {
 
     /** Reverses enableInWorldSpectator — restores normal survival state. */
     private void disableInWorldSpectator(Player player) {
+        spectatorPlayers.remove(player.getUniqueId());
         player.removePotionEffect(org.bukkit.potion.PotionEffectType.INVISIBILITY);
         player.setAllowFlight(false);
         player.setFlying(false);
@@ -510,4 +514,5 @@ public class BedWarsGame extends GameInstanceImpl {
 
     public Map<String, Location> getBedLocations() { return bedLocations; }
     public Map<String, Boolean> getBedAlive() { return bedAlive; }
+    public boolean isSpectator(UUID playerId) { return spectatorPlayers.contains(playerId); }
 }

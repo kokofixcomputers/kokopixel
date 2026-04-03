@@ -40,17 +40,17 @@ public class GameListener implements Listener {
         // Use MONITOR priority so we see the final cancelled state
     }
 
-    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR)
     public void onBlockBreakMonitor(BlockBreakEvent e) {
         String world = e.getPlayer().getWorld().getName();
         if (isLobby(world) || isSpectator(e.getPlayer())) return;
         plugin.getMinigameManager().getGameIdForWorld(world).ifPresent(gameId ->
             plugin.getReplayManager().recordBlockChange(gameId,
                 e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ(), 
-                e.getBlock().getType().name(), "AIR"));
+                e.getBlock().getType().name(), "AIR", !e.isCancelled()));
     }
 
-    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR)
     public void onBlockPlace(BlockPlaceEvent e) {
         String world = e.getPlayer().getWorld().getName();
         if (isLobby(world) || isSpectator(e.getPlayer())) return;
@@ -58,20 +58,7 @@ public class GameListener implements Listener {
             plugin.getReplayManager().recordBlockChange(gameId,
                 e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ(),
                 e.getBlockReplacedState().getType().name(),
-                e.getBlock().getType().name()));
-    }
-
-    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR, ignoreCancelled = true)
-    public void onEntityExplode(EntityExplodeEvent e) {
-        String world = e.getLocation().getWorld().getName();
-        if (isLobby(world)) return;
-        plugin.getMinigameManager().getGameIdForWorld(world).ifPresent(gameId -> {
-            for (org.bukkit.block.Block block : e.blockList()) {
-                plugin.getReplayManager().recordBlockChange(gameId,
-                        block.getX(), block.getY(), block.getZ(), 
-                        block.getType().name(), "AIR");
-            }
-        });
+                e.getBlock().getType().name(), !e.isCancelled()));
     }
 
     @EventHandler
@@ -131,20 +118,20 @@ public class GameListener implements Listener {
         if (sessionOpt.isEmpty()) return;
         
         EnhancedReplaySession session = sessionOpt.get();
-        java.util.List<UUID> playerIds = new java.util.ArrayList<>(session.getRecording().participants);
+        java.util.List<java.util.UUID> playerIds = new java.util.ArrayList<>(session.getRecording().participants);
         
         // Create GUI with player heads
         int size = Math.min(54, playerIds.size()); // Max chest size
         org.bukkit.inventory.Inventory gui = plugin.getServer().createInventory(null, size, "§6§lTeleport to Player");
         
         for (int i = 0; i < size; i++) {
-            UUID playerId = playerIds.get(i);
+            java.util.UUID playerId = playerIds.get(i);
             String playerName = session.getRecording().participants.size() > i ? 
                 "Unknown Player" : "Player " + (i + 1);
             
-            org.bukkit.inventory.ItemStack head = new org.bukkit.inventory.ItemStack(Material.PLAYER_HEAD);
+            org.bukkit.inventory.ItemStack head = new org.bukkit.inventory.ItemStack(org.bukkit.Material.PLAYER_HEAD);
             var meta = head.getItemMeta();
-            meta.setDisplayName(net.kyori.adventure.text.Component.text(playerName));
+            meta.setDisplayName(java.util.Objects.toString(playerName));
             head.setItemMeta(meta);
             gui.setItem(i, head);
         }
@@ -219,5 +206,30 @@ public class GameListener implements Listener {
     @EventHandler public void onEntityDamage(EntityDamageEvent e) {
         if (e.getEntity() instanceof Player p && (isLobby(p.getWorld().getName()) || isSpectator(p)))
             e.setCancelled(true);
+        
+        // Prevent all damage in replay worlds
+        if (plugin.getReplayManager().isReplayWorld(e.getEntity().getWorld().getName())) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent e) {
+        // Prevent explosions in replay worlds
+        if (plugin.getReplayManager().isReplayWorld(e.getLocation().getWorld().getName())) {
+            e.setCancelled(true);
+            return;
+        }
+        
+        // Record explosions for non-replay worlds
+        String world = e.getLocation().getWorld().getName();
+        if (isLobby(world)) return;
+        plugin.getMinigameManager().getGameIdForWorld(world).ifPresent(gameId -> {
+            for (org.bukkit.block.Block block : e.blockList()) {
+                plugin.getReplayManager().recordBlockChange(gameId,
+                        block.getX(), block.getY(), block.getZ(),
+                        block.getType().name(), "AIR", false);
+            }
+        });
     }
 }
