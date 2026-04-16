@@ -104,6 +104,8 @@ public abstract class GameInstanceImpl implements GameInstance {
 
     private void reallyEnd() {
         state = GameState.ENDED;
+        // Clean up any bots in this game
+        KokoPixel.getInstance().getBotManager().removeAllBots(this);
         // Stop replay recording before clearing players
         KokoPixel.getInstance().getReplayManager().stopRecording(this);
         for (BukkitTask t : tasks) t.cancel();

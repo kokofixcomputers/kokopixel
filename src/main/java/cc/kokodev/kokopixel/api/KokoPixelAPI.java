@@ -1,6 +1,7 @@
 package cc.kokodev.kokopixel.api;
 
 import cc.kokodev.kokopixel.api.game.GameInstance;
+import cc.kokodev.kokopixel.bots.BotManager;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
@@ -26,4 +27,7 @@ public interface KokoPixelAPI {
     void removeGameSelectorBlock(Location location);
     void sendGameMessage(UUID gameId, String message);
     Optional<Integer> getPlayerStat(UUID playerId, UUID gameId, String stat);
+
+    /** Access the bot engine registry and lifecycle manager. */
+    BotManager getBotManager();
 }

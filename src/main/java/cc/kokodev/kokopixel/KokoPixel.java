@@ -7,6 +7,7 @@ import cc.kokodev.kokopixel.commands.*;
 import cc.kokodev.kokopixel.listeners.*;
 import cc.kokodev.kokopixel.menu.AdminGUI;
 import cc.kokodev.kokopixel.menu.GameSelectorMenu;
+import cc.kokodev.kokopixel.bots.BotManager;
 import cc.kokodev.kokopixel.minigames.MinigameManager;
 import cc.kokodev.kokopixel.party.PartyManager;
 import cc.kokodev.kokopixel.queue.QueueManager;
@@ -32,6 +33,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     private boolean isVelocityMode = false;
     private BungeeListener bungeeListener;
     private MinigameManager minigameManager;
+    private BotManager botManager;
     private PartyManager partyManager;
     private QueueManager queueManager;
     private WorldManager worldManager;
@@ -71,6 +73,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
         loadLobbySpawn();
         
         this.minigameManager = new MinigameManager(this);
+        this.botManager = new BotManager(this);
         this.partyManager = new PartyManager(this);
         this.queueManager = new QueueManager(this);
         this.worldManager = new WorldManager(this);
@@ -197,6 +200,7 @@ public class KokoPixel extends JavaPlugin implements KokoPixelAPI {
     public boolean isVelocityMode() { return isVelocityMode; }
     public BungeeListener getBungeeListener() { return bungeeListener; }
     public MinigameManager getMinigameManager() { return minigameManager; }
+    public BotManager getBotManager() { return botManager; }
     public PartyManager getPartyManager() { return partyManager; }
     public QueueManager getQueueManager() { return queueManager; }
     public WorldManager getWorldManager() { return worldManager; }

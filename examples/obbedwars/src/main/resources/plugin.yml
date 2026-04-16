@@ -15,3 +15,6 @@ permissions:
   obbedwars.setup:
     default: op
     description: Access to OBBedWars setup commands
+  obbedwars.admin:
+    default: op
+    description: Access to OBBedWars admin commands

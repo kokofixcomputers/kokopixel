@@ -14,6 +14,8 @@ public class BedWarsMinigame extends Minigame {
     private final Map<String, Location> bedLocations = new LinkedHashMap<>();
     // diamond generator locations (world=null, remapped at game start)
     private final List<Location> diamondGens = new ArrayList<>();
+    // NPC shop locations (world=null, remapped at game start)
+    private final List<Location> shopLocations = new ArrayList<>();
 
     private static final List<String> DEFAULT_TEAMS = List.of("red", "blue", "yellow", "lime");
 
@@ -58,8 +60,17 @@ public class BedWarsMinigame extends Minigame {
             diamondGens.add(new Location(null, x, y, z));
         }
 
+        // Shop NPC locations
+        var shopList = cfg.getMapList("shops");
+        for (var map : shopList) {
+            double x = ((Number) map.get("x")).doubleValue();
+            double y = ((Number) map.get("y")).doubleValue();
+            double z = ((Number) map.get("z")).doubleValue();
+            shopLocations.add(new Location(null, x, y, z));
+        }
+
         plugin.getLogger().info("[OBBedWars] Loaded " + bedLocations.size()
-                + " beds and " + diamondGens.size() + " diamond gens.");
+                + " beds, " + diamondGens.size() + " diamond gens, " + shopLocations.size() + " shops.");
     }
 
     public void saveMapConfig(JavaPlugin plugin) {
@@ -80,6 +91,14 @@ public class BedWarsMinigame extends Minigame {
         }
         cfg.set("diamond-gens", gens);
 
+        List<Map<String, Object>> shops = new ArrayList<>();
+        for (Location loc : shopLocations) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("x", loc.getX()); m.put("y", loc.getY()); m.put("z", loc.getZ());
+            shops.add(m);
+        }
+        cfg.set("shops", shops);
+
         try { cfg.save(mapFile); } catch (Exception ex) { ex.printStackTrace(); }
     }
 
@@ -92,6 +111,11 @@ public class BedWarsMinigame extends Minigame {
         diamondGens.add(new Location(null, loc.getX(), loc.getY(), loc.getZ()));
     }
 
+    public void addShop(Location loc) {
+        shopLocations.add(new Location(null, loc.getX(), loc.getY(), loc.getZ()));
+    }
+
     public Map<String, Location> getBedLocations() { return bedLocations; }
     public List<Location> getDiamondGens() { return diamondGens; }
+    public List<Location> getShopLocations() { return shopLocations; }
 }

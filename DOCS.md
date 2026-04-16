@@ -19,6 +19,14 @@ Guide for building a minigame plugin on top of KokoPixel.
 - [GameTeam Reference](#gameteam-reference)
 - [GameState Reference](#gamestate-reference)
 - [Full Example](#full-example)
+- [Bot API](#bot-api)
+  - [Creating a Bot Engine](#creating-a-bot-engine)
+  - [Creating a Bot Controller](#creating-a-bot-controller)
+  - [Spawning a Bot into a Game](#spawning-a-bot-into-a-game)
+  - [BotHandle Reference](#bothandle-reference)
+  - [BotSenses Reference](#botsenses-reference)
+  - [BotActions Reference](#botactions-reference)
+  - [BotManager Reference](#botmanager-reference)
 
 ---
 
@@ -568,3 +576,310 @@ When `handlesDeath()` returns `true`:
 - `GameInstanceImpl.removePlayer` does NOT teleport the player to lobby or clear their inventory
 
 Your `onPlayerLeave` and `onGameEnd` callbacks are still fired normally. You are responsible for teleporting eliminated players and cleaning up their state.
+
+---
+
+## Bot API
+
+KokoPixel includes a packet-based bot system that lets you add AI-controlled fake players to any game. Bots are rendered client-side only — they use the same NMS packet technique as the replay system, so they look like real players to everyone in the game world with no real client connected.
+
+### How it works
+
+- Bots are `ServerPlayer` NMS entities with a bare `GameProfile` (no skin data). Minecraft assigns a default skin client-side.
+- You define a `BotEngine` that acts as a factory, and a `BotController` that holds the AI logic for one bot in one game.
+- The `BotHandle` is the bot's "body" — low-level movement and equipment packets.
+- `BotHandle.getSenses()` gives the bot its eyes — FOV checks, block scanning, enemy detection, team awareness.
+- `BotHandle.getActions()` gives the bot higher-level actions — pathfinding, attacking, block-breaking, bridging.
+
+---
+
+### Setup
+
+No extra dependency is needed — the bot API ships with KokoPixel.
+
+---
+
+### Creating a Bot Engine
+
+Extend `cc.kokodev.kokopixel.bots.BotEngineImpl`:
+
+```java
+public class MyBotEngine extends BotEngineImpl {
+
+    public MyBotEngine(JavaPlugin plugin) {
+        super("mygame_basic", "&7Basic Bot", plugin);
+    }
+
+    @Override
+    public BotController createController(BotHandle bot, GameInstance game) {
+        return new MyBotController();
+    }
+
+    @Override
+    public int getTickInterval() { return 2; } // run AI every 2 ticks — less CPU cost
+}
+```
+
+Register it in `onEnable` (same 1-tick delay pattern as minigames):
+
+```java
+@Override
+public void onEnable() {
+    Bukkit.getScheduler().runTaskLater(this, () ->
+        KokoPixel.getInstance().getBotManager().registerEngine(new MyBotEngine(this)), 1L);
+}
+```
+
+---
+
+### Creating a Bot Controller
+
+Implement `cc.kokodev.kokopixel.api.bot.BotController`:
+
+```java
+public class MyBotController implements BotController {
+
+    @Override
+    public void onStart(BotHandle bot, GameInstance game) {
+        // Called once after the bot spawns. Give it equipment here.
+        bot.setMainHand(new ItemStack(Material.IRON_SWORD));
+        bot.setHelmet(new ItemStack(Material.IRON_HELMET));
+        bot.getActions().setInventory(List.of(
+            new ItemStack(Material.IRON_PICKAXE),
+            new ItemStack(Material.IRON_SWORD)
+        ));
+    }
+
+    @Override
+    public void onTick(BotHandle bot, GameInstance game) {
+        BotSenses s = bot.getSenses();
+        BotActions a = bot.getActions();
+
+        // Find nearest enemy and chase/attack them
+        s.getNearestEnemy(16, game).ifPresent(enemy -> {
+            Location target = enemy.getPlayer().getLocation();
+            a.pathfindTo(target, 0.25);
+            a.lookAt(enemy.getPlayer().getEyeLocation(), 10f);
+
+            if (s.distanceTo(target) < 3.0 && s.hasLineOfSight(enemy.getPlayer())) {
+                a.attack(enemy.getPlayer());
+            }
+        });
+
+        // Bridge over gaps while moving
+        if (s.isAtEdge()) {
+            a.bridgeStep(Material.OAK_PLANKS);
+        }
+    }
+
+    @Override
+    public boolean onDeath(BotHandle bot, GameInstance game) {
+        // Return true to keep the bot alive (you handle respawn)
+        // Return false to remove the bot
+        bot.teleport(game.getWorld().getSpawnLocation());
+        return true;
+    }
+
+    @Override
+    public void onStop(BotHandle bot, GameInstance game) {
+        // Clean up any state when the bot is removed or the game ends
+    }
+}
+```
+
+---
+
+### Spawning a Bot into a Game
+
+Call `spawnBot` from within your `GameInstanceImpl.onGameStart()` or from a command:
+
+```java
+BotHandle bot = KokoPixel.getInstance().getBotManager()
+        .spawnBot("mygame_basic", "Bot_1", spawnLocation, game);
+```
+
+You can also pass a `BotEngine` instance directly:
+
+```java
+BotHandle bot = KokoPixel.getInstance().getBotManager()
+        .spawnBot(new MyBotEngine(plugin), "Bot_1", spawnLocation, game);
+```
+
+Bots are automatically despawned when the game ends — you do not need to clean them up manually.
+
+---
+
+### Removing a Bot mid-game
+
+```java
+KokoPixel.getInstance().getBotManager().removeBot(bot.getUniqueId(), game);
+```
+
+### Notifying a bot of death (from your death listener)
+
+```java
+KokoPixel.getInstance().getBotManager().notifyBotDeath(deadPlayerUUID, game);
+```
+
+`BotController.onDeath` will be called. Return `true` to keep it alive, `false` to remove it.
+
+---
+
+### BotHandle Reference
+
+The bot's "body". Passed into every `BotController` callback.
+
+| Method | Description |
+|---|---|
+| `getUniqueId()` | The bot's UUID |
+| `getName()` | Display name shown above its head |
+| `getLocation()` | Current position in the world |
+| `getWorld()` | The world the bot lives in |
+| `teleport(Location)` | Instantly move the bot (broadcasts teleport packet) |
+| `move(dx, dy, dz, yaw, pitch)` | Move by a relative delta (uses relative movement packet) |
+| `setHeadRotation(yaw, pitch)` | Update head rotation only |
+| `setSneaking(boolean)` | Set sneak state and broadcast metadata packet |
+| `setSprinting(boolean)` | Set sprint state and broadcast metadata packet |
+| `swingMainHand()` | Play the arm-swing animation |
+| `setHelmet(ItemStack)` | Set head armour slot |
+| `setChestplate(ItemStack)` | Set chest armour slot |
+| `setLeggings(ItemStack)` | Set legs armour slot |
+| `setBoots(ItemStack)` | Set feet armour slot |
+| `setMainHand(ItemStack)` | Set held item |
+| `setOffHand(ItemStack)` | Set off-hand item |
+| `getSenses()` | Returns the bot's `BotSenses` perception layer |
+| `getActions()` | Returns the bot's `BotActions` higher-level action layer |
+
+---
+
+### BotSenses Reference
+
+Read-only world perception. Access via `bot.getSenses()`.
+
+**Vision**
+
+| Method | Description |
+|---|---|
+| `canSeeLocation(Location, double)` | True if location is within 70° FOV and max distance |
+| `canSeeLocation(Location, double, float)` | Same with custom FOV half-angle in degrees |
+| `hasLineOfSight(Block)` | Unobstructed line-of-sight to block centre |
+| `hasLineOfSight(Player)` | Unobstructed line-of-sight to a player's eye |
+
+**Block scanning**
+
+| Method | Description |
+|---|---|
+| `getNearbyBlocks(double, Material...)` | All non-air blocks within radius, optionally filtered |
+| `findNearestBlock(double, Material...)` | Nearest block of given material(s) within radius |
+| `getTargetBlock(double)` | Block the bot is looking at (ray-cast) |
+| `getBlockBelow()` | Block directly under the bot's feet |
+| `isOnGround()` | True if the bot is standing on a solid surface |
+| `isAtEdge()` | True if walking forward would step off a ledge |
+| `getBlockAtHead()` | Block at head height (Y+1) |
+
+**Player / entity perception**
+
+| Method | Description |
+|---|---|
+| `getNearbyPlayers(double)` | All real players within radius |
+| `getNearestPlayer(double)` | Nearest player within radius |
+| `getNearestEnemy(double, GameInstance)` | Nearest living enemy player |
+| `getNearestAlly(double, GameInstance)` | Nearest living ally player |
+| `getVisibleEnemies(GameInstance)` | All enemies with line-of-sight |
+
+**Team awareness**
+
+| Method | Description |
+|---|---|
+| `getAliveTeams(GameInstance)` | All non-eliminated teams |
+| `getOwnTeam(GameInstance)` | The bot's own team, if assigned |
+| `isAlly(Player, GameInstance)` | True if player is on the same team |
+| `isEnemy(GamePlayer, GameInstance)` | True if player is on an enemy team |
+
+**Geometry**
+
+| Method | Description |
+|---|---|
+| `distanceTo(Location)` | 3D distance from bot to location |
+| `horizontalDistanceTo(Location)` | Horizontal-only distance (ignores Y) |
+| `yawToward(Location)` | Yaw angle needed to face a location |
+| `pitchToward(Location)` | Pitch angle needed to face a location |
+
+---
+
+### BotActions Reference
+
+Stateful higher-level actions. Access via `bot.getActions()`. Call from `onTick` each tick — multi-tick actions (pathfinding, block-breaking) progress automatically.
+
+**Movement**
+
+| Method | Description |
+|---|---|
+| `walkToward(Location, double)` | Step toward location at speed blocks/tick. Returns true when arrived |
+| `pathfindTo(Location, double)` | A* pathfind toward location, auto-recalculates when stale. Returns true when arrived |
+| `pathfindTo(Location, double, int)` | Same with custom max A* node expansion per call |
+| `jump()` | Jump if on the ground |
+| `setSprinting(boolean)` | Set sprint state |
+| `setSneaking(boolean)` | Set sneak state |
+
+**Combat**
+
+| Method | Description |
+|---|---|
+| `attack(Player)` | Look at target and play attack animation |
+| `swingMainHand()` | Play arm-swing animation only |
+
+**Block interaction**
+
+| Method | Description |
+|---|---|
+| `breakBlock(Block)` | Advance break progress by one tick. Returns true when block is broken |
+| `placeBlock(Block, BlockFace, Material)` | Place a block against the given face. Returns false if out of reach or occupied |
+| `bridgeStep(Material)` | Place one block under the bot's trailing edge while moving forward |
+
+**Look**
+
+| Method | Description |
+|---|---|
+| `lookAt(Location, float)` | Smoothly rotate toward location by at most N degrees/tick. Returns true when fully aimed |
+| `lookAtInstant(Location)` | Snap to face location immediately |
+
+**Inventory / tool**
+
+| Method | Description |
+|---|---|
+| `setInventory(List<ItemStack>)` | Set the bot's virtual inventory for tool-speed calculations |
+| `bestToolFor(Material)` | Returns the best tool in the virtual inventory for breaking a given block |
+
+**State queries**
+
+| Method | Description |
+|---|---|
+| `getCurrentPath()` | The active A* path waypoints |
+| `clearPath()` | Force path recalculation on next `pathfindTo` call |
+| `isJumping()` | True if the bot is airborne from a jump |
+| `isSprinting()` | True if the bot is sprinting |
+| `isSneaking()` | True if the bot is sneaking |
+
+---
+
+### BotManager Reference
+
+Access via `KokoPixel.getInstance().getBotManager()` or `KokoPixelAPI.get().getBotManager()`.
+
+| Method | Description |
+|---|---|
+| `registerEngine(BotEngine)` | Register a bot engine so it can be used by name |
+| `unregisterEngine(String)` | Remove a registered engine |
+| `getEngine(String)` | Get a registered engine by id |
+| `getEngines()` | All registered engines |
+| `spawnBot(String, String, Location, GameInstance)` | Spawn a bot using an engine id |
+| `spawnBot(BotEngine, String, Location, GameInstance)` | Spawn a bot using an engine instance |
+| `removeBot(UUID, GameInstance)` | Remove a specific bot |
+| `removeAllBots(GameInstance)` | Remove all bots in a game (called automatically on game end) |
+| `notifyBotDeath(UUID, GameInstance)` | Signal that a bot died; delegates to `BotController.onDeath` |
+| `isBot(UUID)` | True if the UUID belongs to an active bot |
+| `getBotsInGame(UUID)` | Set of bot UUIDs in a given game |
+| `getHandle(UUID)` | Get the `BotHandle` for a bot UUID |
+| `getController(UUID)` | Get the `BotController` for a bot UUID |
+| `onPlayerJoinWorld(Player, UUID)` | Call when a player joins a game world so they receive spawn packets for existing bots |

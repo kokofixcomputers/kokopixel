@@ -5,6 +5,5 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'KokoPixel'
-
+rootProject.name = 'kokopixel'
 include 'examples:obbedwars'
