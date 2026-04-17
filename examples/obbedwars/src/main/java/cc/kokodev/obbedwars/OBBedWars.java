@@ -17,6 +17,7 @@ public class OBBedWars extends JavaPlugin {
         getServer().getScheduler().runTaskLater(this, () -> {
             minigame = new BedWarsMinigame(this);
             KokoPixel.getInstance().getMinigameManager().registerMinigame(minigame);
+            KokoPixel.getInstance().getBotManager().registerEngine(new BedWarsBotEngine(this));
             getLogger().info("OBBedWars registered with KokoPixel.");
         }, 1L);
 

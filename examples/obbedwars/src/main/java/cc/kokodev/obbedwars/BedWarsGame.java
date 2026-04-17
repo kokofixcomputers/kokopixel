@@ -50,6 +50,36 @@ public class BedWarsGame extends GameInstanceImpl {
     // players currently in spectator mode (death countdown or eliminated)
     private final Set<UUID> spectatorPlayers = new HashSet<>();
 
+    // players with spawn immunity — UUID -> expiry System.currentTimeMillis()
+    private final Map<UUID, Long> spawnImmune = new HashMap<>();
+
+    private static final long SPAWN_IMMUNITY_MS = 3000L; // 3 seconds
+
+    /** Grant 3-second spawn immunity to a player. */
+    public void grantSpawnImmunity(Player player) {
+        spawnImmune.put(player.getUniqueId(), System.currentTimeMillis() + SPAWN_IMMUNITY_MS);
+        // Bots have no connection — skip the potion effect packet
+        if (cc.kokodev.kokopixel.KokoPixel.getInstance().getBotManager().isBot(player.getUniqueId())) return;
+        player.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                org.bukkit.potion.PotionEffectType.RESISTANCE, 60, 4, false, false, false));
+    }
+
+    /** Remove spawn immunity (e.g. when the player attacks). */
+    public void removeSpawnImmunity(Player player) {
+        if (spawnImmune.remove(player.getUniqueId()) != null) {
+            if (!cc.kokodev.kokopixel.KokoPixel.getInstance().getBotManager().isBot(player.getUniqueId()))
+                player.removePotionEffect(org.bukkit.potion.PotionEffectType.RESISTANCE);
+        }
+    }
+
+    /** True if the player currently has active spawn immunity. */
+    public boolean hasSpawnImmunity(UUID playerId) {
+        Long expiry = spawnImmune.get(playerId);
+        if (expiry == null) return false;
+        if (System.currentTimeMillis() > expiry) { spawnImmune.remove(playerId); return false; }
+        return true;
+    }
+
     /** Called by the listener when a totem is consumed on death, before handlePlayerDeath. */
     public void markTotemUsed(UUID playerId) { totemRespawnOverride.add(playerId); }
     // shop NPC villager entities spawned for this game instance
@@ -385,8 +415,10 @@ public class BedWarsGame extends GameInstanceImpl {
             if (stand != null && !stand.isDead()) stand.remove();
         }
         bedArmorStands.clear();
-        // Clean up scoreboard
+        // Clean up scoreboard — skip bots (they have no valid connection)
+        cc.kokodev.kokopixel.KokoPixel kp = cc.kokodev.kokopixel.KokoPixel.getInstance();
         for (GamePlayer gp : getPlayers()) {
+            if (kp.getBotManager().isBot(gp.getUniqueId())) continue;
             gp.getPlayer().setScoreboard(
                     Bukkit.getScoreboardManager().getMainScoreboard());
         }
@@ -394,13 +426,20 @@ public class BedWarsGame extends GameInstanceImpl {
 
     @Override
     protected void onPlayerJoin(GamePlayerImpl player) {
-        // Give starting kit
+        // Bots earn their own items — don't give them a starter kit
+        if (cc.kokodev.kokopixel.KokoPixel.getInstance()
+                .getBotManager().isBot(player.getUniqueId())) {
+            grantSpawnImmunity(player.getPlayer());
+            return;
+        }
+        // Give starting kit to real players
         player.getPlayer().getInventory().addItem(
                 new ItemStack(Material.WOODEN_PICKAXE),
                 new ItemStack(Material.WOODEN_SWORD),
                 new ItemStack(Material.OAK_LOG, 8),
                 new ItemStack(Material.BREAD, 4)
         );
+        grantSpawnImmunity(player.getPlayer());
     }
 
     @Override
@@ -529,9 +568,20 @@ public class BedWarsGame extends GameInstanceImpl {
         // Find the team's player and notify them
         getTeam(teamName).ifPresent(team -> {
             String destroyerName = destroyer != null ? destroyer.getName() : "unknown";
+            cc.kokodev.kokopixel.KokoPixel kp = cc.kokodev.kokopixel.KokoPixel.getInstance();
             for (GamePlayer gp : team.getMembers()) {
-                gp.getPlayer().sendMessage("§c§lYour bed was destroyed by §e" + destroyerName + "§c!");
-                gp.getPlayer().showTitle(
+                if (kp.getBotManager().isBot(gp.getUniqueId())) continue;
+                Player member = gp.getPlayer();
+                // If the player is already dead (on death screen / respawn countdown), they died
+                // BEFORE the bed was broken — don't show "You will not respawn", they already died
+                // with the bed intact so their current respawn countdown should continue.
+                if (spectatorPlayers.contains(member.getUniqueId())) {
+                    member.sendMessage("§c§lYour bed was destroyed by §e" + destroyerName
+                            + "§c §7while you were dead. You may still respawn this time, but not again!");
+                    continue;
+                }
+                member.sendMessage("§c§lYour bed was destroyed by §e" + destroyerName + "§c!");
+                member.showTitle(
                         net.kyori.adventure.title.Title.title(
                                 net.kyori.adventure.text.Component.text("§c§lBED DESTROYED!"),
                                 net.kyori.adventure.text.Component.text("§7You will not respawn!"),
@@ -607,6 +657,7 @@ public class BedWarsGame extends GameInstanceImpl {
             player.setHealth(20);
             player.setFoodLevel(20);
             player.sendMessage("§aRespawned!");
+            grantSpawnImmunity(player);
             return;
         }
 
@@ -1129,7 +1180,11 @@ public class BedWarsGame extends GameInstanceImpl {
         for (GamePlayer gp : getPlayers()) noCollision.addPlayer(gp.getPlayer());
 
         updateScoreboard();
-        for (GamePlayer gp : getPlayers()) gp.getPlayer().setScoreboard(scoreboard);
+        cc.kokodev.kokopixel.KokoPixel kpSb = cc.kokodev.kokopixel.KokoPixel.getInstance();
+        for (GamePlayer gp : getPlayers()) {
+            if (kpSb.getBotManager().isBot(gp.getUniqueId())) continue;
+            gp.getPlayer().setScoreboard(scoreboard);
+        }
     }
 
     private void updateScoreboard() {

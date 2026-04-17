@@ -73,4 +73,11 @@ public interface BotHandle {
 
     /** The world the bot lives in. */
     World getWorld();
+
+    /**
+     * Returns the {@code Player} object backing this bot.
+     * Its inventory is real (backed by the NMS ServerPlayer), so game plugins
+     * and bot controllers can call {@code getInventory()} freely.
+     */
+    org.bukkit.entity.Player getBukkitPlayer();
 }

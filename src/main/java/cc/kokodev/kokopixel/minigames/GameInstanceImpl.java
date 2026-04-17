@@ -48,20 +48,38 @@ public abstract class GameInstanceImpl implements GameInstance {
     @Override public String getGameType() { return minigame.getName(); }
     @Override public GameState getState() { return state; }
     @Override public World getWorld() { return world; }
+
+    /** True if this GamePlayer is a bot — bots have no connection and cannot receive packets. */
+    private boolean isBot(GamePlayer gp) {
+        return KokoPixel.getInstance().getBotManager().isBot(gp.getUniqueId());
+    }
     @Override public List<GamePlayer> getPlayers() { return new ArrayList<>(players); }
     @Override public Optional<GamePlayer> getPlayer(UUID id) { return players.stream().filter(p -> p.getUniqueId().equals(id)).map(p -> (GamePlayer) p).findFirst(); }
     @Override public List<GameTeam> getTeams() { return new ArrayList<>(teams); }
     @Override public Optional<GameTeam> getTeam(String name) { return teams.stream().filter(t -> t.getName().equalsIgnoreCase(name)).map(t -> (GameTeam) t).findFirst(); }
     @Override public Optional<GameTeam> getPlayerTeam(UUID id) { return Optional.ofNullable(playerTeams.get(id)); }
-    @Override public void broadcast(String msg) { for (GamePlayer p : players) p.getPlayer().sendMessage(Component.text("[" + minigame.getDisplayName() + "] ", NamedTextColor.GOLD).append(Component.text(msg, NamedTextColor.WHITE))); }
-    @Override public void broadcastTitle(String t, String s, int fi, int st, int fo) { Title.Times times = Title.Times.times(Duration.ofMillis(fi * 50L), Duration.ofMillis(st * 50L), Duration.ofMillis(fo * 50L)); for (GamePlayer p : players) p.getPlayer().showTitle(Title.title(Component.text(t), Component.text(s), times)); }
+    @Override public void broadcast(String msg) { for (GamePlayer p : players) { if (isBot(p)) continue; p.getPlayer().sendMessage(Component.text("[" + minigame.getDisplayName() + "] ", NamedTextColor.GOLD).append(Component.text(msg, NamedTextColor.WHITE))); } }
+    @Override public void broadcastTitle(String t, String s, int fi, int st, int fo) { Title.Times times = Title.Times.times(Duration.ofMillis(fi * 50L), Duration.ofMillis(st * 50L), Duration.ofMillis(fo * 50L)); for (GamePlayer p : players) { if (isBot(p)) continue; p.getPlayer().showTitle(Title.title(Component.text(t), Component.text(s), times)); } }
     @Override public void setStat(UUID id, String key, int v) { stats.computeIfAbsent(id, k -> new ConcurrentHashMap<>()).put(key, v); }
     @Override public void incrementStat(UUID id, String key, int a) { stats.computeIfAbsent(id, k -> new ConcurrentHashMap<>()).merge(key, a, Integer::sum); }
     @Override public int getStat(UUID id, String key) { return stats.getOrDefault(id, Collections.emptyMap()).getOrDefault(key, 0); }
     @Override public Map<String, Integer> getStats(UUID id) { return new HashMap<>(stats.getOrDefault(id, Collections.emptyMap())); }
-    @Override public void teleport(Player p, Location l) { p.teleport(l); }
-    @Override public void teleportToSpawn(Player p) { if (!spawnPoints.isEmpty()) p.teleport(spawnPoints.get(new Random().nextInt(spawnPoints.size()))); else p.teleport(world.getSpawnLocation()); }
-    @Override public void teleportToTeamSpawn(Player p, String team) { List<Location> list = teamSpawnPoints.get(team); if (list != null && !list.isEmpty()) p.teleport(list.get(new Random().nextInt(list.size()))); else teleportToSpawn(p); }
+    @Override public void teleport(Player p, Location l) {
+        if (KokoPixel.getInstance().getBotManager().isBot(p.getUniqueId())) {
+            KokoPixel.getInstance().getBotManager().getHandle(p.getUniqueId()).ifPresent(h -> h.teleport(l));
+        } else {
+            p.teleport(l);
+        }
+    }
+    @Override public void teleportToSpawn(Player p) {
+        Location dest = !spawnPoints.isEmpty() ? spawnPoints.get(new Random().nextInt(spawnPoints.size())) : world.getSpawnLocation();
+        teleport(p, dest);
+    }
+    @Override public void teleportToTeamSpawn(Player p, String team) {
+        List<Location> list = teamSpawnPoints.get(team);
+        Location dest = (list != null && !list.isEmpty()) ? list.get(new Random().nextInt(list.size())) : world.getSpawnLocation();
+        teleport(p, dest);
+    }
     @Override public void setSpawnPoint(Location l) { spawnPoints.add(l.clone()); }
     @Override public void setTeamSpawnPoint(String team, Location l) { teamSpawnPoints.computeIfAbsent(team, k -> new ArrayList<>()).add(l.clone()); }
     public void addSpawnPoint(Location l) { spawnPoints.add(l.clone()); }
@@ -113,8 +131,9 @@ public abstract class GameInstanceImpl implements GameInstance {
         KokoPixel kp = KokoPixel.getInstance();
         for (GamePlayerImpl p : new ArrayList<>(players)) {
             Player bp = p.getPlayer();
-            // Remove from manager's playerGames map first (avoids double-removal loop)
             kp.getMinigameManager().clearPlayerGame(bp.getUniqueId());
+            // Skip bots — already handled by removeAllBots above
+            if (kp.getBotManager().isBot(bp.getUniqueId())) continue;
             if (bp != null && bp.isOnline()) {
                 bp.setGameMode(org.bukkit.GameMode.ADVENTURE);
                 bp.setHealth(20); bp.setFoodLevel(20); bp.setSaturation(10);
@@ -139,9 +158,16 @@ public abstract class GameInstanceImpl implements GameInstance {
     public void addPlayer(Player p) {
         GamePlayerImpl gp = new GamePlayerImpl(p, this);
         players.add(gp);
-        gp.saveInventory();
-        gp.clearEffects();
-        p.teleport(world.getSpawnLocation());
+        boolean isBot = KokoPixel.getInstance().getBotManager().isBot(p.getUniqueId());
+        if (!isBot) {
+            gp.saveInventory();
+            gp.clearEffects();
+            p.teleport(world.getSpawnLocation());
+        } else {
+            // For bots, sync location via the shadow stand instead of a real teleport
+            KokoPixel.getInstance().getBotManager().getHandle(p.getUniqueId())
+                    .ifPresent(h -> h.teleport(world.getSpawnLocation()));
+        }
         if (!teams.isEmpty()) assignPlayerToTeam(gp);
         onPlayerJoin(gp);
     }
@@ -159,8 +185,10 @@ public abstract class GameInstanceImpl implements GameInstance {
                 GameTeamImpl team = playerTeams.remove(p.getUniqueId());
                 if (team != null) team.removeMember(gp);
                 onPlayerLeave(gp);
+                // Skip lobby cleanup for bots — BotManager handles their teardown
+                boolean isBot = KokoPixel.getInstance().getBotManager().isBot(p.getUniqueId());
                 // Only restore state/teleport to lobby if the minigame doesn't handle death itself
-                if (p.isOnline() && !minigame.handlesDeath()) {
+                if (!isBot && p.isOnline() && !minigame.handlesDeath()) {
                     p.setGameMode(org.bukkit.GameMode.ADVENTURE);
                     p.setHealth(20); p.setFoodLevel(20); p.setSaturation(10);
                     p.getActivePotionEffects().clear();

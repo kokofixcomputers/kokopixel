@@ -24,9 +24,37 @@ public class QueueManager {
         Optional<Party> party = plugin.getPartyManager().getParty(player);
         if (party.isPresent()) {
             if (!party.get().isLeader(player)) { player.sendMessage("§cOnly the party leader can queue!"); return false; }
+            // Validate bot engine compatibility and warn/reject
+            if (!validatePartyBots(player, party.get(), minigame)) return false;
             return addPartyToQueue(party.get(), minigame);
         }
         return addIndividualToQueue(player, minigame);
+    }
+
+    /**
+     * Checks all bot slots in the party against the minigame name.
+     * Warns for incompatible engines (unknown game list = allowed everywhere).
+     * Returns false and blocks queue if ANY engine explicitly rejects the game.
+     */
+    private boolean validatePartyBots(Player leader, Party party, Minigame mg) {
+        cc.kokodev.kokopixel.bots.BotManager bm = plugin.getBotManager();
+        boolean allOk = true;
+        for (cc.kokodev.kokopixel.party.Party.BotSlot slot : party.getBotSlots()) {
+            cc.kokodev.kokopixel.api.bot.BotEngine engine = bm.getEngine(slot.engineId());
+            if (engine == null) {
+                leader.sendMessage("§c[Bots] Unknown engine \"" + slot.engineId() + "\" — bots will be skipped.");
+                allOk = false;
+                continue;
+            }
+            if (!engine.getSupportedGames().isEmpty() && !engine.isGameSupported(mg.getName())) {
+                leader.sendMessage("§c[Bots] Engine \"" + engine.getDisplayName()
+                        + "§c\" does not support " + mg.getDisplayName()
+                        + "§c. Supported: " + engine.getSupportedGames()
+                        + ". Remove bots or queue for a supported game.");
+                return false; // hard reject
+            }
+        }
+        return true; // warnings are non-blocking; only explicit mismatches block
     }
 
     private boolean addIndividualToQueue(Player p, Minigame mg) {
@@ -39,8 +67,8 @@ public class QueueManager {
     private boolean addPartyToQueue(Party party, Minigame mg) {
         if (partyQueues.containsKey(party.getPartyId())) { party.getLeader().sendMessage("§cYour party is already in a queue!"); return false; }
         List<Player> members = party.getOnlineMembers();
-        // Include remote members in size check
-        int totalSize = plugin.getPartyManager().getCrossServerPartySize(party);
+        // Total = real players (including remote) + bot slots
+        int totalSize = plugin.getPartyManager().getCrossServerPartySize(party) + party.getTotalBotCount();
         if (party.isPrivate()) {
             List<GameQueue> list = queues.computeIfAbsent(mg.getName(), k -> new ArrayList<>());
             GameQueue q = new GameQueue(plugin, mg, QueueType.PRIVATE, party);
@@ -48,7 +76,6 @@ public class QueueManager {
             if (q.addParty(party)) {
                 partyQueues.put(party.getPartyId(), q);
                 for (Player m : members) playerQueues.put(m.getUniqueId(), q);
-                // Warp remote members to this server
                 plugin.getPartyManager().warpPartyForQueue(party, mg.getName());
                 return true;
             }
@@ -60,11 +87,10 @@ public class QueueManager {
         if (q != null && q.addParty(party)) {
             partyQueues.put(party.getPartyId(), q);
             for (Player m : members) playerQueues.put(m.getUniqueId(), q);
-            // Warp remote members to this server
             plugin.getPartyManager().warpPartyForQueue(party, mg.getName());
             return true;
         }
-        party.getLeader().sendMessage("§cCannot fit party of " + totalSize + " into queue (max: " + mg.getMaxPlayers() + ")");
+        party.getLeader().sendMessage("§cCannot fit party of " + totalSize + " (including " + party.getTotalBotCount() + " bot(s)) into queue (max: " + mg.getMaxPlayers() + ")");
         return false;
     }
 

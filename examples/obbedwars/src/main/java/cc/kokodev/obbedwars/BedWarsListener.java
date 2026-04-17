@@ -143,7 +143,9 @@ public class BedWarsListener implements Listener {
             player.setCooldown(Material.PAPER, cooldown);
             String pusherTeam = game.getPlayerTeamName(player);
             int pushed = 0;
-            for (Player nearby : player.getWorld().getPlayers()) {
+            // Include both real players AND bots (via game player list)
+            for (cc.kokodev.kokopixel.api.game.GamePlayer gp : game.getPlayers()) {
+                Player nearby = gp.getPlayer();
                 if (nearby.equals(player)) continue;
                 if (nearby.getLocation().distance(player.getLocation()) > range) continue;
                 String nearbyTeam = game.getPlayerTeamName(nearby);
@@ -152,7 +154,21 @@ public class BedWarsListener implements Listener {
                 org.bukkit.util.Vector dir = nearby.getLocation().toVector()
                         .subtract(player.getLocation().toVector())
                         .normalize().multiply(force).setY(0.4);
-                nearby.setVelocity(dir);
+                // For bots, apply velocity to the shadow stand so isLaunched() detects it
+                boolean isBot = KokoPixel.getInstance().getBotManager().isBot(nearby.getUniqueId());
+                if (isBot) {
+                    KokoPixel.getInstance().getBotManager().getHandle(nearby.getUniqueId())
+                            .ifPresent(h -> {
+                                // Teleport shadow stand by the force vector to simulate knockback
+                                org.bukkit.Location newLoc = h.getLocation().clone().add(
+                                        dir.getX() * 0.5, dir.getY() * 0.5, dir.getZ() * 0.5);
+                                h.teleport(newLoc);
+                                // Set velocity on CraftPlayer so isLaunched() detects it
+                                nearby.setVelocity(dir);
+                            });
+                } else {
+                    nearby.setVelocity(dir);
+                }
                 pushed++;
             }
             float pitch = level == 3 ? 1.5f : level == 2 ? 1.2f : 0.8f;
@@ -489,10 +505,100 @@ public class BedWarsListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerAnimation(org.bukkit.event.player.PlayerAnimationEvent event) {
+        if (event.getAnimationType() != org.bukkit.event.player.PlayerAnimationType.ARM_SWING) return;
+        Player attacker = event.getPlayer();
+        BedWarsGame game = getActiveGame(attacker);
+        if (game == null || game.isSpectator(attacker.getUniqueId())) return;
+
+        // Check if the player is facing a bot within melee reach (3.5 blocks)
+        // and has a weapon in hand (not just walking around)
+        ItemStack hand = attacker.getInventory().getItemInMainHand();
+        String handName = hand.getType().name();
+        boolean hasWeapon = handName.endsWith("_SWORD") || handName.endsWith("_AXE")
+                || hand.getType() == Material.AIR; // fist also counts
+
+        if (!hasWeapon) return;
+
+        org.bukkit.util.Vector facing = attacker.getLocation().getDirection().normalize();
+        org.bukkit.Location eye = attacker.getEyeLocation();
+
+        for (UUID botId : KokoPixel.getInstance().getBotManager().getBotsInGame(game.getGameId())) {
+            KokoPixel.getInstance().getBotManager().getHandle(botId).ifPresent(h -> {
+                // Bot eye position (1.62 above feet)
+                org.bukkit.Location botEye = h.getLocation().clone().add(0, 1.62, 0);
+                double dist = eye.distance(botEye);
+                if (dist > 3.5) return;
+
+                // Check if player is roughly facing the bot (within 45°)
+                org.bukkit.util.Vector toBot = botEye.toVector()
+                        .subtract(eye.toVector()).normalize();
+                if (facing.dot(toBot) < Math.cos(Math.toRadians(45))) return;
+
+                // Strip attacker's spawn immunity
+                game.removeSpawnImmunity(attacker);
+
+                // Apply damage — base 5 HP (2.5 hearts) for fist/sword, scaled by weapon
+                int dmg = handName.endsWith("_SWORD") ? 7
+                        : handName.endsWith("_AXE") ? 9
+                        : 3; // fist
+                applyBotDamage(botId, game, dmg, EntityDamageEvent.DamageCause.ENTITY_ATTACK);
+            });
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDamage(EntityDamageEvent event) {
+        // Route damage on bot shadow ArmorStands to the bot death system
+        if (event.getEntity() instanceof org.bukkit.entity.ArmorStand stand
+                && stand.getScoreboardTags().contains("kp_bot_shadow")) {
+            event.setCancelled(true); // absorb — we handle HP manually
+            BedWarsGame game = getGameInWorld(stand.getWorld());
+            if (game == null) return;
+
+            UUID botId = KokoPixel.getInstance().getBotManager()
+                    .getBotIdForStand(stand.getUniqueId());
+            if (botId == null) return;
+
+            applyBotDamage(botId, game, (int) Math.max(1, event.getFinalDamage()), event.getCause());
+            return;
+        }
+
+        // Also handle the case where a player tries to hit the fake player VISUAL —
+        // the visual is a packet-only entity so it gets no events, but the player's
+        // attack still fires EntityDamageByEntityEvent on whatever real entity is nearby.
+        // If an attacker hits nothing but is close to a bot, apply melee damage manually.
+        if (event instanceof EntityDamageByEntityEvent edbeCheck
+                && edbeCheck.getDamager() instanceof Player attacker) {
+            BedWarsGame game2 = getActiveGame(attacker);
+            if (game2 != null && !game2.isSpectator(attacker.getUniqueId())) {
+                // Check if attacker is close to a bot stand (within 4 blocks, in combat reach)
+                for (UUID botId : KokoPixel.getInstance().getBotManager()
+                        .getBotsInGame(game2.getGameId())) {
+                    KokoPixel.getInstance().getBotManager().getHandle(botId).ifPresent(h -> {
+                        double dist = h.getLocation().distance(attacker.getLocation());
+                        // Only intercept if the attacked entity is NOT the stand itself
+                        // (that case is already handled above) and attacker is in melee range
+                        if (dist < 4.0 && !(event.getEntity() instanceof org.bukkit.entity.ArmorStand)) {
+                            // Don't cancel — just also damage the bot
+                            applyBotDamage(botId, game2,
+                                    (int) Math.max(1, event.getFinalDamage()),
+                                    EntityDamageEvent.DamageCause.ENTITY_ATTACK);
+                        }
+                    });
+                }
+            }
+        }
+
         if (event.getEntity() instanceof Player victim) {
             BedWarsGame game = getActiveGame(victim);
             if (game == null) return;
+
+            // Block damage if victim has spawn immunity
+            if (game.hasSpawnImmunity(victim.getUniqueId())) {
+                event.setCancelled(true);
+                return;
+            }
 
             // Instantly kill players who fall into the void
             if (event.getCause() == EntityDamageEvent.DamageCause.VOID) {
@@ -507,6 +613,9 @@ public class BedWarsListener implements Listener {
                     event.setCancelled(true);
                     return;
                 }
+                // Strip spawn immunity from the attacker when they deal damage
+                BedWarsGame attackerGame = getActiveGame(damager);
+                if (attackerGame != null) attackerGame.removeSpawnImmunity(damager);
             }
             
             // Prevent spectators from taking damage (they should be invulnerable already)
@@ -590,6 +699,27 @@ public class BedWarsListener implements Listener {
                 .filter(g -> g.getState() == GameState.ACTIVE)
                 .map(g -> (BedWarsGame) g)
                 .orElse(null);
+    }
+
+    private void applyBotDamage(UUID botId, BedWarsGame game, int dmg,
+                                 EntityDamageEvent.DamageCause cause) {
+        boolean instant = cause == EntityDamageEvent.DamageCause.LIGHTNING
+                || cause == EntityDamageEvent.DamageCause.VOID
+                || cause == EntityDamageEvent.DamageCause.ENTITY_EXPLOSION
+                || cause == EntityDamageEvent.DamageCause.BLOCK_EXPLOSION;
+        if (instant) {
+            KokoPixel.getInstance().getBotManager().notifyBotDeath(botId, game);
+        } else {
+            String key = "bot_hp_" + botId;
+            int cur = (int) game.getData().getOrDefault(key, 20);
+            int newHp = cur - dmg;
+            if (newHp <= 0) {
+                game.getData().remove(key);
+                KokoPixel.getInstance().getBotManager().notifyBotDeath(botId, game);
+            } else {
+                game.getData().put(key, newHp);
+            }
+        }
     }
 
     private BedWarsGame getGameInWorld(World world) {
@@ -769,9 +899,21 @@ public class BedWarsListener implements Listener {
             if (uuidStr == null) return;
 
             Player target = Bukkit.getPlayer(UUID.fromString(uuidStr));
+            // Fallback: look up in the game's player list (covers bots whose CraftPlayer
+            // is not in Bukkit's online player list)
+            if (target == null) {
+                UUID targetUuid = UUID.fromString(uuidStr);
+                BedWarsGame curGame = getGameInWorld(player.getWorld());
+                if (curGame != null) {
+                    target = curGame.getPlayers().stream()
+                            .filter(gp -> gp.getUniqueId().equals(targetUuid))
+                            .map(cc.kokodev.kokopixel.api.game.GamePlayer::getPlayer)
+                            .findFirst().orElse(null);
+                }
+            }
             player.closeInventory();
 
-            if (target == null || !target.isOnline()) {
+            if (target == null) {
                 player.sendMessage("§cThat player is no longer available.");
                 return;
             }
@@ -791,8 +933,15 @@ public class BedWarsListener implements Listener {
                 }
             }
 
-            // Strike lightning
+            // Strike lightning at target's location
             target.getWorld().strikeLightning(target.getLocation());
+            // If target is a bot, the lightning won't trigger PlayerDeathEvent — notify manually
+            if (KokoPixel.getInstance().getBotManager().isBot(target.getUniqueId())) {
+                BedWarsGame curGame = getGameInWorld(target.getWorld());
+                if (curGame != null)
+                    KokoPixel.getInstance().getBotManager()
+                            .notifyBotDeath(target.getUniqueId(), curGame);
+            }
             player.sendMessage("§e§lLightning Scroll §7— struck §c" + target.getName() + "§7!");
             return;
         }

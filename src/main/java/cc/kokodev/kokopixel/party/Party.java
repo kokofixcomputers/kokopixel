@@ -9,14 +9,17 @@ import org.bukkit.entity.Player;
 
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-
 public class Party {
+    /** A bot slot added to the party: engine id + number of bots requested. */
+    public record BotSlot(String engineId, int count) {}
+
     private final UUID partyId;
     private final Player leader;
     private final List<Player> members = new CopyOnWriteArrayList<>();
     private final Map<UUID, Player> pendingInvites = new HashMap<>();
     private boolean isPrivate = false;
     private final KokoPixel plugin;
+    private final List<BotSlot> botSlots = new CopyOnWriteArrayList<>();
 
     public Party(KokoPixel plugin, Player leader) { this.plugin = plugin; this.partyId = UUID.randomUUID(); this.leader = leader; this.members.add(leader); }
     public UUID getPartyId() { return partyId; }
@@ -27,6 +30,27 @@ public class Party {
     public boolean isMember(Player p) { return members.contains(p); }
     public boolean isLeader(Player p) { return leader.equals(p); }
     public boolean isPrivate() { return isPrivate; }
+
+    // -------------------------------------------------------------------------
+    // Bot slots
+    // -------------------------------------------------------------------------
+
+    /** Adds a bot slot (or replaces an existing one for the same engine). */
+    public void addBotSlot(String engineId, int count) {
+        botSlots.removeIf(s -> s.engineId().equalsIgnoreCase(engineId));
+        if (count > 0) botSlots.add(new BotSlot(engineId.toLowerCase(), count));
+    }
+
+    /** Removes all bot slots for the given engine. */
+    public void removeBotSlot(String engineId) {
+        botSlots.removeIf(s -> s.engineId().equalsIgnoreCase(engineId));
+    }
+
+    /** Returns all pending bot slots. */
+    public List<BotSlot> getBotSlots() { return List.copyOf(botSlots); }
+
+    /** Total number of bot fill slots across all engines. */
+    public int getTotalBotCount() { return botSlots.stream().mapToInt(BotSlot::count).sum(); }
 
     public void invite(Player inviter, Player target) {
         if (!isLeader(inviter)) { inviter.sendMessage(Msg.error("Only the party leader can invite players!")); return; }

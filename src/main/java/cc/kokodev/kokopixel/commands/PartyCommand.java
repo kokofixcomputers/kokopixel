@@ -48,6 +48,7 @@ public class PartyCommand implements CommandExecutor, TabCompleter {
             case "public": togglePrivate(player, false); break;
             case "list": listParty(player); break;
             case "transfer": if (args.length < 2) player.sendMessage(legacy.deserialize("§cUsage: /party transfer <player>")); else transferLeader(player, args[1]); break;
+            case "bot": handleBot(player, args); break;
             default: sendHelp(player); break;
         }
         return true;
@@ -126,6 +127,66 @@ public class PartyCommand implements CommandExecutor, TabCompleter {
         party.get().transfer(target);
     }
 
+    private void handleBot(Player player, String[] args) {
+        Optional<Party> partyOpt = plugin.getPartyManager().getParty(player);
+        if (partyOpt.isEmpty()) { player.sendMessage(legacy.deserialize("§cYou're not in a party!")); return; }
+        Party party = partyOpt.get();
+        if (!party.isLeader(player)) { player.sendMessage(legacy.deserialize("§cOnly the party leader can manage bots!")); return; }
+
+        // /party bot clear  — remove all bots
+        if (args.length == 2 && args[1].equalsIgnoreCase("clear")) {
+            party.getBotSlots().forEach(s -> party.removeBotSlot(s.engineId()));
+            player.sendMessage(legacy.deserialize("§aAll bot slots cleared."));
+            return;
+        }
+
+        // /party bot <count> <engine>
+        if (args.length < 3) {
+            player.sendMessage(legacy.deserialize("§cUsage: /party bot <count> <engine>"));
+            player.sendMessage(legacy.deserialize("§cUsage: /party bot clear"));
+            return;
+        }
+
+        int count;
+        try {
+            count = Integer.parseInt(args[1]);
+            if (count < 0) throw new NumberFormatException();
+        } catch (NumberFormatException e) {
+            player.sendMessage(legacy.deserialize("§cCount must be a positive number."));
+            return;
+        }
+
+        String engineId = args[2].toLowerCase();
+        cc.kokodev.kokopixel.api.bot.BotEngine engine = plugin.getBotManager().getEngine(engineId);
+        if (engine == null) {
+            player.sendMessage(legacy.deserialize("§cUnknown bot engine: §e" + engineId));
+            List<String> ids = new ArrayList<>(plugin.getBotManager().getEngineIds());
+            if (ids.isEmpty()) player.sendMessage(legacy.deserialize("§7No engines are registered."));
+            else player.sendMessage(legacy.deserialize("§7Available: §e" + String.join("§7, §e", ids)));
+            return;
+        }
+
+        if (count == 0) {
+            party.removeBotSlot(engineId);
+            player.sendMessage(legacy.deserialize("§aRemoved bots for engine §e" + engine.getDisplayName() + "§a."));
+            return;
+        }
+
+        // Soft warning if the engine has a restricted game list
+        if (!engine.getSupportedGames().isEmpty()) {
+            player.sendMessage(legacy.deserialize("§e[Bots] Note: §e" + engine.getDisplayName()
+                    + " §eonly supports: §f" + engine.getSupportedGames()
+                    + "§e. You will be blocked from queuing incompatible games."));
+        }
+
+        party.addBotSlot(engineId, count);
+        party.broadcast(Component.text("[Bots] ", NamedTextColor.AQUA)
+                .append(Component.text(player.getName() + " added ", NamedTextColor.GRAY))
+                .append(Component.text(count + "x ", NamedTextColor.YELLOW))
+                .append(Component.text(engine.getDisplayName(), NamedTextColor.WHITE))
+                .append(Component.text(" bot(s) to the party.", NamedTextColor.GRAY)));
+    }
+
     private void sendHelp(Player player) {
         player.sendMessage(legacy.deserialize("§6=== Party Commands ==="));
         player.sendMessage(legacy.deserialize("§e/party create §7- Create a party"));
@@ -137,12 +198,30 @@ public class PartyCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(legacy.deserialize("§e/party private/public §7- Change party privacy"));
         player.sendMessage(legacy.deserialize("§e/party list §7- List party members"));
         player.sendMessage(legacy.deserialize("§e/party transfer <player> §7- Transfer leadership"));
+        player.sendMessage(legacy.deserialize("§e/party bot <count> <engine> §7- Add bots to party (0 = remove)"));
+        player.sendMessage(legacy.deserialize("§e/party bot clear §7- Remove all bot slots"));
     }
 
     @Override public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
-        if (args.length == 1) return Arrays.asList("create", "invite", "accept", "leave", "kick", "disband", "private", "public", "list", "transfer");
-        if (args.length == 2 && (args[0].equalsIgnoreCase("invite") || args[0].equalsIgnoreCase("kick") || args[0].equalsIgnoreCase("accept") || args[0].equalsIgnoreCase("transfer"))) {
-            return Bukkit.getOnlinePlayers().stream().map(Player::getName).filter(n -> n.toLowerCase().startsWith(args[1].toLowerCase())).toList();
+        if (args.length == 1)
+            return Arrays.asList("create", "invite", "accept", "leave", "kick", "disband", "private", "public", "list", "transfer", "bot")
+                    .stream().filter(s -> s.startsWith(args[0].toLowerCase())).toList();
+        if (args.length == 2) {
+            if (args[0].equalsIgnoreCase("invite") || args[0].equalsIgnoreCase("kick")
+                    || args[0].equalsIgnoreCase("accept") || args[0].equalsIgnoreCase("transfer")) {
+                return Bukkit.getOnlinePlayers().stream().map(Player::getName)
+                        .filter(n -> n.toLowerCase().startsWith(args[1].toLowerCase())).toList();
+            }
+            if (args[0].equalsIgnoreCase("bot")) {
+                // suggest count or "clear"
+                return Arrays.asList("1", "2", "3", "4", "clear").stream()
+                        .filter(s -> s.startsWith(args[1].toLowerCase())).toList();
+            }
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("bot")) {
+            // suggest registered engine ids
+            return new ArrayList<>(plugin.getBotManager().getEngineIds()).stream()
+                    .filter(id -> id.startsWith(args[2].toLowerCase())).toList();
         }
         return new ArrayList<>();
     }

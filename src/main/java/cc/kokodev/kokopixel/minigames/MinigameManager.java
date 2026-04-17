@@ -41,6 +41,11 @@ public class MinigameManager {
     public void addTeamSpawnPoint(String name, String team, Location l) { Minigame m = getMinigame(name); if (m != null) m.addTeamSpawnPoint(team, l); }
 
     public void startGame(Minigame mg, List<Player> players, boolean isPrivate) {
+        startGame(mg, players, isPrivate, java.util.Collections.emptyList());
+    }
+
+    public void startGame(Minigame mg, List<Player> players, boolean isPrivate,
+                          List<cc.kokodev.kokopixel.party.Party.BotSlot> botSlots) {
         plugin.getWorldManager().createGameWorldAsync(mg, w -> {
             if (w == null) { players.forEach(p -> p.sendMessage("§cFailed to create game world!")); return; }
             GameInstanceImpl game = mg.createInstance(w);
@@ -52,13 +57,53 @@ public class MinigameManager {
             for (Player p : players) {
                 game.addPlayer(p);
                 playerGames.put(p.getUniqueId(), game);
-                // Clean up any residual QueueManager playerQueues entry.
-                // GameQueue already cleared its own list; this just ensures
-                // QueueManager's playerQueues map is also clean.
                 plugin.getQueueManager().silentRemove(p);
             }
             game.start();
+            // Inject bots after the game has started
+            if (!botSlots.isEmpty()) {
+                plugin.getServer().getScheduler().runTaskLater(plugin, () ->
+                        injectBots(game, botSlots), 2L);
+            }
         });
+    }
+
+    private void injectBots(GameInstanceImpl game, List<cc.kokodev.kokopixel.party.Party.BotSlot> slots) {
+        cc.kokodev.kokopixel.bots.BotManager bm = plugin.getBotManager();
+        int botIndex = 1;
+        for (cc.kokodev.kokopixel.party.Party.BotSlot slot : slots) {
+            cc.kokodev.kokopixel.api.bot.BotEngine engine = bm.getEngine(slot.engineId());
+            if (engine == null) {
+                plugin.getLogger().warning("[BotManager] Cannot inject bots — unknown engine: " + slot.engineId());
+                continue;
+            }
+            for (int i = 0; i < slot.count(); i++) {
+                String name = "Bot_" + botIndex++;
+                org.bukkit.Location spawnAt = game.getWorld().getSpawnLocation();
+                // Spawn the NMS fake player and get its ServerPlayer so we can addPlayer to game
+                cc.kokodev.kokopixel.bots.BotHandleImpl handle =
+                        new cc.kokodev.kokopixel.bots.BotHandleImpl(name, spawnAt, plugin);
+
+                // Register with BotManager tracking maps BEFORE addPlayer so isBot() works
+                bm.registerHandleForGame(handle, game);
+
+                // Add the NMS ServerPlayer as a real player to the GameInstance.
+                // getBukkitEntity() returns the CraftPlayer wrapping the ServerPlayer,
+                // so the game treats it as a normal Player with no code changes needed.
+                Player botBukkitPlayer = handle.getBukkitPlayer();
+                game.addPlayer(botBukkitPlayer);
+                playerGames.put(botBukkitPlayer.getUniqueId(), game);
+
+                // Now spawn the visual entity for all viewers and start AI
+                handle.spawnForWorld();
+                cc.kokodev.kokopixel.api.bot.BotController controller = engine.createController(handle, game);
+                // Register shadow stand UUID → bot UUID BEFORE starting tick task
+                bm.registerShadowStand(handle.getShadowStandUUID(), handle.getUniqueId());
+                // onStart before tick task so the goal stack is populated before first tick
+                controller.onStart(handle, game);
+                bm.startController(handle, controller, engine, game);
+            }
+        }
     }
 
     public Optional<GameInstanceImpl> getGame(Player p) { return Optional.ofNullable(playerGames.get(p.getUniqueId())); }

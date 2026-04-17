@@ -34,4 +34,21 @@ public interface BotEngine {
      * Default is 1 (every tick). Override to reduce CPU cost.
      */
     default int getTickInterval() { return 1; }
+
+    /**
+     * The set of minigame names this engine supports, e.g. {@code ["skywars", "bedwars"]}.
+     * Return an empty set to indicate the engine works with any game.
+     * Used by the party bot system to warn or reject incompatible games at queue time.
+     */
+    default java.util.Set<String> getSupportedGames() { return java.util.Collections.emptySet(); }
+
+    /**
+     * Returns true if this engine supports the given game (case-insensitive).
+     * Always returns true when {@link #getSupportedGames()} is empty.
+     */
+    default boolean isGameSupported(String gameId) {
+        java.util.Set<String> supported = getSupportedGames();
+        if (supported.isEmpty()) return true;
+        return supported.stream().anyMatch(s -> s.equalsIgnoreCase(gameId));
+    }
 }

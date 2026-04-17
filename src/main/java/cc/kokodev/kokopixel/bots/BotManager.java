@@ -40,6 +40,9 @@ public class BotManager {
     /** botUUID -> active handle */
     private final Map<UUID, BotHandleImpl> activeHandles = new ConcurrentHashMap<>();
 
+    /** shadowStand entity UUID -> bot UUID — for fast damage-event routing */
+    private final Map<UUID, UUID> shadowStandToBotId = new ConcurrentHashMap<>();
+
     /** botUUID -> active controller */
     private final Map<UUID, BotController> activeControllers = new ConcurrentHashMap<>();
 
@@ -132,7 +135,10 @@ public class BotManager {
         BotController controller = activeControllers.remove(botId);
         BotHandleImpl handle = activeHandles.remove(botId);
 
-        if (handle != null) handle.despawn();
+        if (handle != null) {
+            shadowStandToBotId.remove(handle.getShadowStandUUID());
+            handle.despawn();
+        }
         if (controller != null && handle != null) controller.onStop(handle, game);
 
         Set<UUID> bots = gameBots.get(game.getGameId());
@@ -192,6 +198,47 @@ public class BotManager {
     }
 
     // -------------------------------------------------------------------------
+    // Internal / package-private hooks used by MinigameManager
+    // -------------------------------------------------------------------------
+
+    /**
+     * Registers a shadow stand entity UUID → bot UUID mapping so the damage handler
+     * can resolve the bot from the stand that was hit.
+     */
+    public void registerShadowStand(UUID standUUID, UUID botId) {
+        shadowStandToBotId.put(standUUID, botId);
+    }
+
+    /** Returns the bot UUID for a given shadow stand entity UUID, or null. */
+    public UUID getBotIdForStand(UUID standUUID) {
+        return shadowStandToBotId.get(standUUID);
+    }
+
+    /**
+     * Registers a pre-constructed handle into the manager's tracking maps before
+     * the bot is added to a game. Called by MinigameManager so isBot() returns
+     * true when the game's addPlayer fires events.
+     */
+    public void registerHandleForGame(BotHandleImpl handle, GameInstance game) {
+        UUID botId = handle.getUniqueId();
+        activeHandles.put(botId, handle);
+        shadowStandToBotId.put(handle.getShadowStandUUID(), botId);
+        gameBots.computeIfAbsent(game.getGameId(), k -> ConcurrentHashMap.newKeySet()).add(botId);
+    }
+
+    /**
+     * Stores the controller and starts the tick task.  Called by MinigameManager
+     * after addPlayer has been called so the controller has a fully initialised
+     * GameInstance to work with.
+     */
+    public void startController(BotHandleImpl handle, BotController controller,
+                                 BotEngine engine, GameInstance game) {
+        UUID botId = handle.getUniqueId();
+        activeControllers.put(botId, controller);
+        startTickTask(engine, botId, handle, controller, game);
+    }
+
+    // -------------------------------------------------------------------------
     // Internal
     // -------------------------------------------------------------------------
 
@@ -206,6 +253,7 @@ public class BotManager {
                 } catch (Exception e) {
                     plugin.getLogger().warning("[BotManager] Tick error for bot " + handle.getName()
                             + ": " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         }.runTaskTimer(plugin, interval, interval);

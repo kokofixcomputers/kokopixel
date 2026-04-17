@@ -164,10 +164,27 @@ public class BotActionsImpl implements BotActions {
         breakProgress++;
 
         if (breakProgress >= totalTicks || breakProgress >= MAX_BREAK_TICKS) {
-            block.setType(Material.AIR);
-            currentBreakTarget = null;
-            breakProgress = 0;
-            return true;
+            // Fire a BlockBreakEvent so game plugins (e.g. BedWarsListener) handle it
+            // exactly as they would for a real player breaking the block.
+            org.bukkit.event.block.BlockBreakEvent event =
+                    new org.bukkit.event.block.BlockBreakEvent(block, bot.getBukkitPlayer());
+            org.bukkit.Bukkit.getPluginManager().callEvent(event);
+
+            if (!event.isCancelled()) {
+                // Event not cancelled — block is fully broken
+                block.setType(Material.AIR);
+                currentBreakTarget = null;
+                breakProgress = 0;
+                return true;
+            } else {
+                // Event was cancelled by a game plugin (e.g. bed took a hit but wasn't destroyed yet,
+                // or an anchor absorbed it). Reset progress so the bot starts a fresh break cycle
+                // on the same block next call — the game already recorded the hit.
+                breakProgress = 0;
+                // Return true so the controller knows the "attempt" completed and can re-evaluate
+                // (e.g. check if the bed is now gone, or try again next tick)
+                return true;
+            }
         }
         return false;
     }

@@ -128,11 +128,15 @@ public class BotSensesImpl implements BotSenses {
     @Override
     public boolean isOnGround() {
         Block below = getBlockBelow();
-        if (below.getType().isAir() || !below.getType().isSolid()) return false;
-        // Check that bot feet Y is close to the top surface of the block below
-        double feetY = bot.getLocation().getY();
-        double surfaceY = below.getY() + 1.0;
-        return Math.abs(feetY - surfaceY) < 0.15;
+        // For bots the shadow stand has no gravity so it floats at placed Y;
+        // consider the bot "on ground" if there's a solid block within 1.5 blocks below.
+        if (below.getType().isAir() || !below.getType().isSolid()) {
+            // Check one more block down
+            Location loc = bot.getLocation();
+            Block twoBelow = loc.getWorld().getBlockAt(loc.getBlockX(), loc.getBlockY() - 2, loc.getBlockZ());
+            return twoBelow.getType().isSolid();
+        }
+        return true;
     }
 
     @Override
