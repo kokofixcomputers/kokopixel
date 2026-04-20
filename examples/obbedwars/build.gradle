@@ -22,7 +22,7 @@ dependencies {
     // Compile directly against KokoPixel's compiled classes and its compile classpath
     compileOnly files(project(':').sourceSets.main.output.classesDirs)
     compileOnly files(project(':').configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.collect { it.file })
-    compileOnly 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
+    compileOnly 'io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT'
 }
 
 // Ensure KokoPixel is compiled before we try to compile the example
